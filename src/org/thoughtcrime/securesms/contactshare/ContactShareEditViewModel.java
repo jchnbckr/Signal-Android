@@ -1,11 +1,11 @@
 package org.thoughtcrime.securesms.contactshare;
 
-import android.arch.lifecycle.LiveData;
-import android.arch.lifecycle.MutableLiveData;
-import android.arch.lifecycle.ViewModel;
-import android.arch.lifecycle.ViewModelProvider;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
+import androidx.lifecycle.ViewModel;
+import androidx.lifecycle.ViewModelProvider;
 import android.net.Uri;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 import com.annimon.stream.Stream;
 
@@ -19,10 +19,10 @@ class ContactShareEditViewModel extends ViewModel {
 
   private final MutableLiveData<List<Contact>> contacts;
   private final SingleLiveEvent<Event>         events;
-  private final ContactRepository              repo;
+  private final SharedContactRepository repo;
 
   ContactShareEditViewModel(@NonNull List<Uri>         contactUris,
-                            @NonNull ContactRepository contactRepository)
+                            @NonNull SharedContactRepository contactRepository)
   {
     contacts = new MutableLiveData<>();
     events              = new SingleLiveEvent<>();
@@ -98,9 +98,9 @@ class ContactShareEditViewModel extends ViewModel {
   static class Factory extends ViewModelProvider.NewInstanceFactory {
 
     private final List<Uri>         contactUris;
-    private final ContactRepository contactRepository;
+    private final SharedContactRepository contactRepository;
 
-    Factory(@NonNull List<Uri> contactUris, @NonNull ContactRepository contactRepository) {
+    Factory(@NonNull List<Uri> contactUris, @NonNull SharedContactRepository contactRepository) {
       this.contactUris       = contactUris;
       this.contactRepository = contactRepository;
     }

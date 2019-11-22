@@ -30,9 +30,9 @@ import android.os.Build.VERSION_CODES;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Telephony;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RequiresPermission;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresPermission;
 import android.telephony.TelephonyManager;
 import android.text.Spannable;
 import android.text.SpannableString;
@@ -47,7 +47,6 @@ import com.google.i18n.phonenumbers.Phonenumber;
 
 import org.thoughtcrime.securesms.BuildConfig;
 import org.thoughtcrime.securesms.components.ComposeText;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.mms.OutgoingLegacyMmsConnection;
 import org.whispersystems.libsignal.util.guava.Optional;
@@ -103,11 +102,21 @@ public class Util {
   }
 
   public static String join(long[] list, String delimeter) {
+    List<Long> boxed = new ArrayList<>(list.length);
+
+    for (int i = 0; i < list.length; i++) {
+      boxed.add(list[i]);
+    }
+
+    return join(boxed, delimeter);
+  }
+
+  public static String join(List<Long> list, String delimeter) {
     StringBuilder sb = new StringBuilder();
 
-    for (int j=0;j<list.length;j++) {
+    for (int j = 0; j < list.size(); j++) {
       if (j != 0) sb.append(delimeter);
-      sb.append(list[j]);
+      sb.append(list.get(j));
     }
 
     return sb.toString();
@@ -220,13 +229,6 @@ public class Util {
     }
 
     return totalSize;
-  }
-
-  public static boolean isOwnNumber(Context context, Address address) {
-    if (address.isGroup()) return false;
-    if (address.isEmail()) return false;
-
-    return TextSecurePreferences.getLocalNumber(context).equals(address.toPhoneString());
   }
 
   public static void readFully(InputStream in, byte[] buffer) throws IOException {
@@ -540,6 +542,14 @@ public class Util {
     int      digitGroups = (int) (Math.log10(sizeBytes) / Math.log10(1024));
 
     return new DecimalFormat("#,##0.#").format(sizeBytes/Math.pow(1024, digitGroups)) + " " + units[digitGroups];
+  }
+
+  public static void sleep(long millis) {
+    try {
+      Thread.sleep(millis);
+    } catch (InterruptedException e) {
+      throw new AssertionError(e);
+    }
   }
 
   private static Handler getHandler() {

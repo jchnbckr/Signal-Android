@@ -3,8 +3,8 @@ package org.thoughtcrime.securesms.components.identity;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.os.AsyncTask;
-import android.support.annotation.NonNull;
-import android.support.v7.app.AlertDialog;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
@@ -45,7 +45,7 @@ public class UnverifiedSendDialog extends AlertDialog.Builder implements DialogI
       protected Void doInBackground(Void... params) {
         synchronized (SESSION_LOCK) {
           for (IdentityRecord identityRecord : untrustedRecords) {
-            identityDatabase.setVerified(identityRecord.getAddress(),
+            identityDatabase.setVerified(identityRecord.getRecipientId(),
                                          identityRecord.getIdentityKey(),
                                          IdentityDatabase.VerifiedStatus.DEFAULT);
           }

@@ -4,9 +4,9 @@ import android.app.Notification;
 import android.content.Context;
 import android.graphics.Color;
 import android.net.Uri;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v4.app.NotificationCompat;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 
@@ -39,7 +39,7 @@ public abstract class AbstractNotificationBuilder extends NotificationCompat.Bui
 
   protected CharSequence getStyledMessage(@NonNull Recipient recipient, @Nullable CharSequence message) {
     SpannableStringBuilder builder = new SpannableStringBuilder();
-    builder.append(Util.getBoldedString(recipient.toShortString()));
+    builder.append(Util.getBoldedString(recipient.toShortString(context)));
     builder.append(": ");
     builder.append(message == null ? "" : message);
 

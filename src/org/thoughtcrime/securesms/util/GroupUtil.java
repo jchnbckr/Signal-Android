@@ -1,22 +1,24 @@
 package org.thoughtcrime.securesms.util;
 
 import android.content.Context;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.WorkerThread;
+import android.text.TextUtils;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.WorkerThread;
 
 import com.google.protobuf.ByteString;
 
 import org.thoughtcrime.securesms.R;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.GroupDatabase;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.mms.OutgoingGroupMediaMessage;
 import org.thoughtcrime.securesms.recipients.Recipient;
-import org.thoughtcrime.securesms.recipients.RecipientModifiedListener;
-import org.thoughtcrime.securesms.sms.MessageSender;
+import org.thoughtcrime.securesms.recipients.RecipientForeverObserver;
 import org.whispersystems.libsignal.util.guava.Optional;
+import org.whispersystems.signalservice.api.push.SignalServiceAddress;
+import org.whispersystems.signalservice.api.util.UuidUtil;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -53,7 +55,7 @@ public class GroupUtil {
 
   @WorkerThread
   public static Optional<OutgoingGroupMediaMessage> createGroupLeaveMessage(@NonNull Context context, @NonNull Recipient groupRecipient) {
-    String        encodedGroupId = groupRecipient.getAddress().toGroupString();
+    String        encodedGroupId = groupRecipient.requireGroupId();
     GroupDatabase groupDatabase  = DatabaseFactory.getGroupDatabase(context);
 
     if (!groupDatabase.isActive(encodedGroupId)) {
@@ -74,7 +76,7 @@ public class GroupUtil {
                                             .setType(GroupContext.Type.QUIT)
                                             .build();
 
-    return Optional.of(new OutgoingGroupMediaMessage(groupRecipient, groupContext, null, System.currentTimeMillis(), 0, null, Collections.emptyList(), Collections.emptyList()));
+    return Optional.of(new OutgoingGroupMediaMessage(groupRecipient, groupContext, null, System.currentTimeMillis(), 0, false, null, Collections.emptyList(), Collections.emptyList()));
   }
 
 
@@ -107,15 +109,15 @@ public class GroupUtil {
       } else {
         this.members = new LinkedList<>();
 
-        for (String member : groupContext.getMembersList()) {
-          this.members.add(Recipient.from(context, Address.fromExternal(context, member), true));
+        for (GroupContext.Member member : groupContext.getMembersList()) {
+          this.members.add(Recipient.externalPush(context, new SignalServiceAddress(UuidUtil.parseOrNull(member.getUuid()), member.getE164())));
         }
       }
     }
 
     public String toString(Recipient sender) {
       StringBuilder description = new StringBuilder();
-      description.append(context.getString(R.string.MessageRecord_s_updated_group, sender.toShortString()));
+      description.append(context.getString(R.string.MessageRecord_s_updated_group, sender.toShortString(context)));
 
       if (groupContext == null) {
         return description.toString();
@@ -138,10 +140,18 @@ public class GroupUtil {
       return description.toString();
     }
 
-    public void addListener(RecipientModifiedListener listener) {
+    public void addObserver(RecipientForeverObserver listener) {
       if (this.members != null) {
         for (Recipient member : this.members) {
-          member.addListener(listener);
+          member.live().observeForever(listener);
+        }
+      }
+    }
+
+    public void removeObserver(RecipientForeverObserver listener) {
+      if (this.members != null) {
+        for (Recipient member : this.members) {
+          member.live().removeForeverObserver(listener);
         }
       }
     }
@@ -150,7 +160,7 @@ public class GroupUtil {
       String result = "";
 
       for (int i=0;i<recipients.size();i++) {
-        result += recipients.get(i).toShortString();
+        result += recipients.get(i).toShortString(context);
 
       if (i != recipients.size() -1 )
         result += ", ";

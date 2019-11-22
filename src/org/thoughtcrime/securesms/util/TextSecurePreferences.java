@@ -7,10 +7,10 @@ import android.net.Uri;
 import android.os.Build;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
-import android.support.annotation.ArrayRes;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v4.app.NotificationCompat;
+import androidx.annotation.ArrayRes;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
 
 import org.greenrobot.eventbus.EventBus;
 import org.thoughtcrime.securesms.R;
@@ -19,6 +19,7 @@ import org.thoughtcrime.securesms.lock.RegistrationLockReminders;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.preferences.widgets.NotificationPrivacyPreference;
 import org.whispersystems.libsignal.util.Medium;
+import org.whispersystems.signalservice.api.util.UuidUtil;
 
 import java.io.IOException;
 import java.security.SecureRandom;
@@ -26,6 +27,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 public class TextSecurePreferences {
 
@@ -71,6 +73,7 @@ public class TextSecurePreferences {
   private static final String MMS_CUSTOM_USER_AGENT            = "pref_custom_mms_user_agent";
   private static final String THREAD_TRIM_ENABLED              = "pref_trim_threads";
   private static final String LOCAL_NUMBER_PREF                = "pref_local_number";
+  private static final String LOCAL_UUID_PREF                  = "pref_local_uuid";
   private static final String VERIFYING_STATE_PREF             = "pref_verifying";
   public  static final String REGISTERED_GCM_PREF              = "pref_gcm_registered";
   private static final String GCM_PASSWORD_PREF                = "pref_gcm_password";
@@ -168,7 +171,8 @@ public class TextSecurePreferences {
   private static final String NEEDS_MESSAGE_PULL = "pref_needs_message_pull";
 
   private static final String UNIDENTIFIED_ACCESS_CERTIFICATE_ROTATION_TIME_PREF = "pref_unidentified_access_certificate_rotation_time";
-  private static final String UNIDENTIFIED_ACCESS_CERTIFICATE                    = "pref_unidentified_access_certificate";
+  private static final String UNIDENTIFIED_ACCESS_CERTIFICATE_LEGACY             = "pref_unidentified_access_certificate";
+  private static final String UNIDENTIFIED_ACCESS_CERTIFICATE                    = "pref_unidentified_access_certificate_uuid";
   public  static final String UNIVERSAL_UNIDENTIFIED_ACCESS                      = "pref_universal_unidentified_access";
   public  static final String SHOW_UNIDENTIFIED_DELIVERY_INDICATORS              = "pref_show_unidentifed_delivery_indicators";
   private static final String UNIDENTIFIED_DELIVERY_ENABLED                      = "pref_unidentified_delivery_enabled";
@@ -182,6 +186,20 @@ public class TextSecurePreferences {
   private static final String SEEN_STICKER_INTRO_TOOLTIP = "pref_seen_sticker_intro_tooltip";
 
   private static final String MEDIA_KEYBOARD_MODE = "pref_media_keyboard_mode";
+
+  private static final String VIEW_ONCE_DEFAULT = "pref_revealable_message_default";
+
+  private static final String SEEN_CAMERA_FIRST_TOOLTIP = "pref_seen_camera_first_tooltip";
+
+  private static final String JOB_MANAGER_VERSION = "pref_job_manager_version";
+
+  private static final String APP_MIGRATION_VERSION = "pref_app_migration_version";
+
+  private static final String FIRST_INSTALL_VERSION = "pref_first_install_version";
+
+  private static final String HAS_SEEN_SWIPE_TO_REPLY = "pref_has_seen_swipe_to_reply";
+
+  private static final String HAS_SEEN_VIDEO_RECORDING_TOOLTIP = "camerax.fragment.has.dismissed.video.recording.tooltip";
 
   public static boolean isScreenLockEnabled(@NonNull Context context) {
     return getBooleanPreference(context, SCREEN_LOCK, false);
@@ -366,6 +384,10 @@ public class TextSecurePreferences {
 
   public static boolean isLinkPreviewsEnabled(Context context) {
     return getBooleanPreference(context, LINK_PREVIEWS, true);
+  }
+
+  public static void setLinkPreviewsEnabled(Context context, boolean enabled) {
+    setBooleanPreference(context, LINK_PREVIEWS, enabled);
   }
 
   public static boolean isGifSearchInGridLayout(Context context) {
@@ -562,10 +584,21 @@ public class TextSecurePreferences {
   }
 
   public static byte[] getUnidentifiedAccessCertificate(Context context) {
+    return parseCertificate(getStringPreference(context, UNIDENTIFIED_ACCESS_CERTIFICATE, null));
+  }
+
+  public static void setUnidentifiedAccessCertificateLegacy(Context context, byte[] value) {
+    setStringPreference(context, UNIDENTIFIED_ACCESS_CERTIFICATE_LEGACY, Base64.encodeBytes(value));
+  }
+
+  public static byte[] getUnidentifiedAccessCertificateLegacy(Context context) {
+    return parseCertificate(getStringPreference(context, UNIDENTIFIED_ACCESS_CERTIFICATE_LEGACY, null));
+  }
+
+  private static byte[] parseCertificate(String raw) {
     try {
-      String result = getStringPreference(context, UNIDENTIFIED_ACCESS_CERTIFICATE, null);
-      if (result != null) {
-        return Base64.decode(result);
+      if (raw != null) {
+        return Base64.decode(raw);
       }
     } catch (IOException e) {
       Log.w(TAG, e);
@@ -576,6 +609,10 @@ public class TextSecurePreferences {
 
   public static boolean isUniversalUnidentifiedAccess(Context context) {
     return getBooleanPreference(context, UNIVERSAL_UNIDENTIFIED_ACCESS, false);
+  }
+
+  public static void setShowUnidentifiedDeliveryIndicatorsEnabled(Context context, boolean enabled) {
+    setBooleanPreference(context, SHOW_UNIDENTIFIED_DELIVERY_INDICATORS, enabled);
   }
 
   public static boolean isShowUnidentifiedDeliveryIndicatorsEnabled(Context context) {
@@ -636,6 +673,14 @@ public class TextSecurePreferences {
 
   public static void setLocalNumber(Context context, String localNumber) {
     setStringPreference(context, LOCAL_NUMBER_PREF, localNumber);
+  }
+
+  public static UUID getLocalUuid(Context context) {
+    return UuidUtil.parseOrNull(getStringPreference(context, LOCAL_UUID_PREF, null));
+  }
+
+  public static void setLocalUuid(Context context, UUID uuid) {
+    setStringPreference(context, LOCAL_UUID_PREF, uuid.toString());
   }
 
   public static String getPushServerPassword(Context context) {
@@ -779,7 +824,7 @@ public class TextSecurePreferences {
   }
 
   public static int getLastVersionCode(Context context) {
-    return getIntegerPreference(context, LAST_VERSION_CODE_PREF, 0);
+    return getIntegerPreference(context, LAST_VERSION_CODE_PREF, Util.getCanonicalVersionCode());
   }
 
   public static void setLastVersionCode(Context context, int versionCode) throws IOException {
@@ -1096,6 +1141,62 @@ public class TextSecurePreferences {
   public static MediaKeyboardMode getMediaKeyboardMode(Context context) {
     String name = getStringPreference(context, MEDIA_KEYBOARD_MODE, MediaKeyboardMode.EMOJI.name());
     return MediaKeyboardMode.valueOf(name);
+  }
+
+  public static void setIsRevealableMessageEnabled(Context context, boolean value) {
+    setBooleanPreference(context, VIEW_ONCE_DEFAULT, value);
+  }
+
+  public static boolean isRevealableMessageEnabled(Context context) {
+    return getBooleanPreference(context, VIEW_ONCE_DEFAULT, false);
+  }
+
+  public static void setHasSeenCameraFirstTooltip(Context context, boolean value) {
+    setBooleanPreference(context, SEEN_CAMERA_FIRST_TOOLTIP, value);
+  }
+
+  public static boolean hasSeendCameraFirstTooltip(Context context) {
+    return getBooleanPreference(context, SEEN_CAMERA_FIRST_TOOLTIP, false);
+  }
+
+  public static void setJobManagerVersion(Context context, int version) {
+    setIntegerPrefrence(context, JOB_MANAGER_VERSION, version);
+  }
+
+  public static int getJobManagerVersion(Context contex) {
+    return getIntegerPreference(contex, JOB_MANAGER_VERSION, 1);
+  }
+
+  public static void setAppMigrationVersion(Context context, int version) {
+    setIntegerPrefrence(context, APP_MIGRATION_VERSION, version);
+  }
+
+  public static int getAppMigrationVersion(Context context) {
+    return getIntegerPreference(context, APP_MIGRATION_VERSION, 1);
+  }
+
+  public static void setFirstInstallVersion(Context context, int version) {
+    setIntegerPrefrence(context, FIRST_INSTALL_VERSION, version);
+  }
+
+  public static int getFirstInstallVersion(Context context) {
+    return getIntegerPreference(context, FIRST_INSTALL_VERSION, -1);
+  }
+
+  public static boolean hasSeenSwipeToReplyTooltip(Context context) {
+    return getBooleanPreference(context, HAS_SEEN_SWIPE_TO_REPLY, false);
+  }
+
+  public static void setHasSeenSwipeToReplyTooltip(Context context, boolean value) {
+    setBooleanPreference(context, HAS_SEEN_SWIPE_TO_REPLY, value);
+  }
+
+  public static boolean hasSeenVideoRecordingTooltip(Context context) {
+    return getBooleanPreference(context, HAS_SEEN_VIDEO_RECORDING_TOOLTIP, false);
+  }
+
+  public static void setHasSeenVideoRecordingTooltip(Context context, boolean value) {
+    setBooleanPreference(context, HAS_SEEN_VIDEO_RECORDING_TOOLTIP, value);
   }
 
   public static void setBooleanPreference(Context context, String key, boolean value) {

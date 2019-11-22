@@ -3,12 +3,12 @@ package org.thoughtcrime.securesms.profiles;
 
 import android.content.Context;
 import android.os.Build;
-import android.support.annotation.AttrRes;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RequiresApi;
-import android.support.annotation.StyleRes;
-import android.support.v7.app.AlertDialog;
+import androidx.annotation.AttrRes;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
+import androidx.annotation.StyleRes;
+import androidx.appcompat.app.AlertDialog;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -55,7 +55,7 @@ public class GroupShareProfileView extends FrameLayout {
             .setTitle(R.string.GroupShareProfileView_share_your_profile_name_and_photo_with_this_group)
             .setMessage(R.string.GroupShareProfileView_do_you_want_to_make_your_profile_name_and_photo_visible_to_all_current_and_future_members_of_this_group)
             .setPositiveButton(R.string.GroupShareProfileView_make_visible, (dialog, which) -> {
-              DatabaseFactory.getRecipientDatabase(getContext()).setProfileSharing(recipient, true);
+              DatabaseFactory.getRecipientDatabase(getContext()).setProfileSharing(recipient.getId(), true);
             })
             .setNegativeButton(android.R.string.cancel, null)
             .show();

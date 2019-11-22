@@ -1,17 +1,19 @@
 package org.thoughtcrime.securesms.service;
 
 import android.app.Service;
-import android.arch.lifecycle.DefaultLifecycleObserver;
-import android.arch.lifecycle.LifecycleOwner;
-import android.arch.lifecycle.ProcessLifecycleOwner;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.ProcessLifecycleOwner;
 import android.content.Context;
 import android.content.Intent;
 import android.os.IBinder;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v4.app.NotificationCompat;
-import android.support.v4.content.ContextCompat;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
+import org.thoughtcrime.securesms.IncomingMessageProcessor.Processor;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobmanager.ConstraintObserver;
 import org.thoughtcrime.securesms.jobmanager.impl.NetworkConstraint;
 import org.thoughtcrime.securesms.jobmanager.impl.NetworkConstraintObserver;
@@ -19,8 +21,6 @@ import org.thoughtcrime.securesms.logging.Log;
 
 import org.thoughtcrime.securesms.ApplicationContext;
 import org.thoughtcrime.securesms.R;
-import org.thoughtcrime.securesms.dependencies.InjectableType;
-import org.thoughtcrime.securesms.jobs.PushContentReceiveJob;
 import org.thoughtcrime.securesms.notifications.NotificationChannels;
 import org.thoughtcrime.securesms.push.SignalServiceNetworkAccess;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
@@ -31,9 +31,7 @@ import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import javax.inject.Inject;
-
-public class IncomingMessageObserver implements InjectableType, ConstraintObserver.Notifier {
+public class IncomingMessageObserver implements ConstraintObserver.Notifier {
 
   private static final String TAG = IncomingMessageObserver.class.getSimpleName();
 
@@ -43,19 +41,17 @@ public class IncomingMessageObserver implements InjectableType, ConstraintObserv
   private static SignalServiceMessagePipe pipe             = null;
   private static SignalServiceMessagePipe unidentifiedPipe = null;
 
-  private final Context           context;
-  private final NetworkConstraint networkConstraint;
+  private final Context                      context;
+  private final NetworkConstraint            networkConstraint;
+  private final SignalServiceNetworkAccess   networkAccess;
 
   private boolean appVisible;
 
-  @Inject SignalServiceMessageReceiver receiver;
-  @Inject SignalServiceNetworkAccess   networkAccess;
 
   public IncomingMessageObserver(@NonNull Context context) {
-    ApplicationContext.getInstance(context).injectDependencies(this);
-
-    this.context            = context;
+    this.context           = context;
     this.networkConstraint = new NetworkConstraint.Factory(ApplicationContext.getInstance(context)).create();
+    this.networkAccess     = ApplicationDependencies.getSignalServiceNetworkAccess();
 
     new NetworkConstraintObserver(ApplicationContext.getInstance(context)).register(this);
     new MessageRetrievalThread().start();
@@ -146,6 +142,8 @@ public class IncomingMessageObserver implements InjectableType, ConstraintObserv
         waitForConnectionNecessary();
 
         Log.i(TAG, "Making websocket connection....");
+        SignalServiceMessageReceiver receiver = ApplicationDependencies.getSignalServiceMessageReceiver();
+
         pipe             = receiver.createMessagePipe();
         unidentifiedPipe = receiver.createUnidentifiedMessagePipe();
 
@@ -158,8 +156,10 @@ public class IncomingMessageObserver implements InjectableType, ConstraintObserv
               Log.i(TAG, "Reading message...");
               localPipe.read(REQUEST_TIMEOUT_MINUTES, TimeUnit.MINUTES,
                              envelope -> {
-                               Log.i(TAG, "Retrieved envelope! " + String.valueOf(envelope.getSource()));
-                               new PushContentReceiveJob(context).processEnvelope(envelope);
+                               Log.i(TAG, "Retrieved envelope! " + envelope.getSourceIdentifier());
+                               try (Processor processor = ApplicationDependencies.getIncomingMessageProcessor().acquire()) {
+                                 processor.processEnvelope(envelope);
+                               }
                              });
             } catch (TimeoutException e) {
               Log.w(TAG, "Application level read timeout...");

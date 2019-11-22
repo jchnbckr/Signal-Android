@@ -4,7 +4,7 @@ import android.content.Intent;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
 import android.os.Bundle;
-import android.support.v4.app.ActivityOptionsCompat;
+import androidx.core.app.ActivityOptionsCompat;
 
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.logging.Log;
@@ -84,15 +84,10 @@ public class ConversationPopupActivity extends ConversationActivity {
           public void onSuccess(Long result) {
             ActivityOptionsCompat transition = ActivityOptionsCompat.makeScaleUpAnimation(getWindow().getDecorView(), 0, 0, getWindow().getAttributes().width, getWindow().getAttributes().height);
             Intent intent = new Intent(ConversationPopupActivity.this, ConversationActivity.class);
-            intent.putExtra(ConversationActivity.ADDRESS_EXTRA, getRecipient().getAddress());
+            intent.putExtra(ConversationActivity.RECIPIENT_EXTRA, getRecipient().getId());
             intent.putExtra(ConversationActivity.THREAD_ID_EXTRA, result);
 
-            if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN) {
-              startActivity(intent, transition.toBundle());
-            } else {
-              startActivity(intent);
-              overridePendingTransition(R.anim.fade_scale_in, R.anim.slide_to_right);
-            }
+            startActivity(intent, transition.toBundle());
 
             finish();
           }
@@ -121,7 +116,7 @@ public class ConversationPopupActivity extends ConversationActivity {
   }
 
   @Override
-  protected void updateReminders(boolean seenInvite) {
+  protected void updateReminders() {
     if (reminderView.resolved()) {
       reminderView.get().setVisibility(View.GONE);
     }

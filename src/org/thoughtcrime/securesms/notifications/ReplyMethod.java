@@ -1,7 +1,7 @@
 package org.thoughtcrime.securesms.notifications;
 
 import android.content.Context;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 import org.thoughtcrime.securesms.database.RecipientDatabase;
 import org.thoughtcrime.securesms.recipients.Recipient;
@@ -14,7 +14,7 @@ public enum ReplyMethod {
   UnsecuredSmsMessage;
 
   public static @NonNull ReplyMethod forRecipient(Context context, Recipient recipient) {
-    if (recipient.isGroupRecipient()) {
+    if (recipient.isGroup()) {
       return ReplyMethod.GroupMessage;
     } else if (TextSecurePreferences.isPushRegistered(context) && recipient.getRegistered() == RecipientDatabase.RegisteredState.REGISTERED && !recipient.isForceSmsSelection()) {
       return ReplyMethod.SecureMessage;

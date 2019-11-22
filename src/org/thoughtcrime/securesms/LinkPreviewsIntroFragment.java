@@ -3,12 +3,13 @@ package org.thoughtcrime.securesms;
 
 import android.content.Context;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.v4.app.Fragment;
+import androidx.annotation.NonNull;
+import androidx.fragment.app.Fragment;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobs.MultiDeviceConfigurationUpdateJob;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 
@@ -46,12 +47,10 @@ public class LinkPreviewsIntroFragment extends Fragment {
     View view = inflater.inflate(R.layout.experience_upgrade_link_previews_fragment, container, false);
 
     view.findViewById(R.id.experience_ok_button).setOnClickListener(v -> {
-      ApplicationContext.getInstance(requireContext())
-                        .getJobManager()
-                        .add(new MultiDeviceConfigurationUpdateJob(TextSecurePreferences.isReadReceiptsEnabled(requireContext()),
-                                                                   TextSecurePreferences.isTypingIndicatorsEnabled(requireContext()),
-                                                                   TextSecurePreferences.isShowUnidentifiedDeliveryIndicatorsEnabled(requireContext()),
-                                                                   TextSecurePreferences.isLinkPreviewsEnabled(requireContext())));
+      ApplicationDependencies.getJobManager().add(new MultiDeviceConfigurationUpdateJob(TextSecurePreferences.isReadReceiptsEnabled(requireContext()),
+                                                                                        TextSecurePreferences.isTypingIndicatorsEnabled(requireContext()),
+                                                                                        TextSecurePreferences.isShowUnidentifiedDeliveryIndicatorsEnabled(requireContext()),
+                                                                                        TextSecurePreferences.isLinkPreviewsEnabled(requireContext())));
       controller.onLinkPreviewsFinished();
     });
 

@@ -1,7 +1,7 @@
 package org.thoughtcrime.securesms.jobs;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import android.telephony.SmsMessage;
 
 import org.thoughtcrime.securesms.jobmanager.Data;
@@ -100,7 +100,7 @@ public class SmsReceiveJob extends BaseJob {
 
   private boolean isBlocked(IncomingTextMessage message) {
     if (message.getSender() != null) {
-      Recipient recipient = Recipient.from(context, message.getSender(), false);
+      Recipient recipient = Recipient.resolved(message.getSender());
       return recipient.isBlocked();
     }
 
@@ -134,7 +134,9 @@ public class SmsReceiveJob extends BaseJob {
     List<IncomingTextMessage> messages = new LinkedList<>();
 
     for (Object pdu : pdus) {
-      messages.add(new IncomingTextMessage(context, SmsMessage.createFromPdu((byte[])pdu), subscriptionId));
+      SmsMessage message   = SmsMessage.createFromPdu((byte[])pdu);
+      Recipient  recipient = Recipient.external(context, message.getDisplayOriginatingAddress());
+      messages.add(new IncomingTextMessage(recipient.getId(), message, subscriptionId));
     }
 
     if (messages.isEmpty()) {

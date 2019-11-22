@@ -2,14 +2,16 @@ package org.thoughtcrime.securesms.scribbles;
 
 import android.content.Context;
 import android.graphics.Color;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+
+import androidx.annotation.MainThread;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.scribbles.widget.ColorPaletteAdapter;
@@ -34,8 +36,10 @@ public final class ImageEditorHud extends LinearLayout {
   private View                     drawButton;
   private View                     highlightButton;
   private View                     textButton;
-  private View                     stickerButton;
+  private View                     oldStickerButton;
+  private View                     newStickerButton;
   private View                     undoButton;
+  private View                     saveButton;
   private View                     deleteButton;
   private View                     confirmButton;
   private VerticalSlideColorPicker colorPicker;
@@ -79,8 +83,10 @@ public final class ImageEditorHud extends LinearLayout {
     drawButton       = findViewById(R.id.scribble_draw_button);
     highlightButton  = findViewById(R.id.scribble_highlight_button);
     textButton       = findViewById(R.id.scribble_text_button);
-    stickerButton    = findViewById(R.id.scribble_sticker_button);
+    oldStickerButton = findViewById(R.id.old_scribble_sticker_button);
+    newStickerButton = findViewById(R.id.scribble_sticker_button);
     undoButton       = findViewById(R.id.scribble_undo_button);
+    saveButton       = findViewById(R.id.scribble_save_button);
     deleteButton     = findViewById(R.id.scribble_delete_button);
     confirmButton    = findViewById(R.id.scribble_confirm_button);
     colorPicker      = findViewById(R.id.scribble_color_picker);
@@ -100,7 +106,7 @@ public final class ImageEditorHud extends LinearLayout {
   }
 
   private void initializeVisibilityMap() {
-    setVisibleViewsWhenInMode(Mode.NONE, drawButton, highlightButton, textButton, stickerButton, cropButton, undoButton);
+    setStickersAvailable(false);
 
     setVisibleViewsWhenInMode(Mode.DRAW, confirmButton, undoButton, colorPicker, colorPalette);
 
@@ -110,15 +116,32 @@ public final class ImageEditorHud extends LinearLayout {
 
     setVisibleViewsWhenInMode(Mode.MOVE_DELETE, confirmButton, deleteButton);
 
+    setVisibleViewsWhenInMode(Mode.INSERT_STICKER, confirmButton);
+
+    setVisibleViewsWhenInMode(Mode.INSERT_ASSET_STICKER, confirmButton);
+
     setVisibleViewsWhenInMode(Mode.CROP, confirmButton, cropFlipButton, cropRotateButton, cropAspectLock, undoButton);
 
     for (Set<View> views : visibilityModeMap.values()) {
       allViews.addAll(views);
     }
+
+    allViews.add(newStickerButton);
+    allViews.add(oldStickerButton);
   }
 
   private void setVisibleViewsWhenInMode(Mode mode, View... views) {
     visibilityModeMap.put(mode, new HashSet<>(Arrays.asList(views)));
+  }
+
+  @MainThread
+  public void setStickersAvailable(boolean stickersAvailable) {
+    if (stickersAvailable) {
+      setVisibleViewsWhenInMode(Mode.NONE, drawButton, highlightButton, textButton, newStickerButton, cropButton, undoButton, saveButton);
+    } else {
+      setVisibleViewsWhenInMode(Mode.NONE, drawButton, highlightButton, textButton, oldStickerButton, cropButton, undoButton, saveButton);
+    }
+    updateButtonVisibility(currentMode);
   }
 
   private void initializeViews() {
@@ -144,7 +167,9 @@ public final class ImageEditorHud extends LinearLayout {
     drawButton.setOnClickListener(v -> setMode(Mode.DRAW));
     highlightButton.setOnClickListener(v -> setMode(Mode.HIGHLIGHT));
     textButton.setOnClickListener(v -> setMode(Mode.TEXT));
-    stickerButton.setOnClickListener(v -> setMode(Mode.MOVE_DELETE));
+    oldStickerButton.setOnClickListener(v -> setMode(Mode.INSERT_ASSET_STICKER));
+    newStickerButton.setOnClickListener(v -> setMode(Mode.INSERT_STICKER));
+    saveButton.setOnClickListener(v -> eventListener.onSave());
   }
 
   public void setColorPalette(@NonNull Set<Integer> colors) {
@@ -169,16 +194,13 @@ public final class ImageEditorHud extends LinearLayout {
     setMode(mode, false);
   }
 
-  private void setMode(@NonNull Mode mode) {
+  public void setMode(@NonNull Mode mode) {
     setMode(mode, true);
   }
 
   private void setMode(@NonNull Mode mode, boolean notify) {
     this.currentMode = mode;
-    Set<View> visibleButtons = visibilityModeMap.get(mode);
-    for (View button : allViews) {
-      button.setVisibility(buttonIsVisible(visibleButtons, button) ? VISIBLE : GONE);
-    }
+    updateButtonVisibility(mode);
 
     switch (mode) {
       case CROP:      presentModeCrop();      break;
@@ -190,7 +212,14 @@ public final class ImageEditorHud extends LinearLayout {
     if (notify) {
       eventListener.onModeStarted(mode);
     }
-    eventListener.onRequestFullScreen(mode != Mode.NONE);
+    eventListener.onRequestFullScreen(mode != Mode.NONE, mode != Mode.TEXT);
+  }
+
+  private void updateButtonVisibility(@NonNull Mode mode) {
+    Set<View> visibleButtons = visibilityModeMap.get(mode);
+    for (View button : allViews) {
+      button.setVisibility(buttonIsVisible(visibleButtons, button) ? VISIBLE : GONE);
+    }
   }
 
   private boolean buttonIsVisible(@Nullable Set<View> visibleButtons, @NonNull View button) {
@@ -233,7 +262,14 @@ public final class ImageEditorHud extends LinearLayout {
   }
 
   public enum Mode {
-    NONE, DRAW, HIGHLIGHT, TEXT, MOVE_DELETE, CROP
+    NONE,
+    CROP,
+    TEXT,
+    DRAW,
+    HIGHLIGHT,
+    MOVE_DELETE,
+    INSERT_STICKER,
+    INSERT_ASSET_STICKER
   }
 
   public interface EventListener {
@@ -241,11 +277,12 @@ public final class ImageEditorHud extends LinearLayout {
     void onColorChange(int color);
     void onUndo();
     void onDelete();
+    void onSave();
     void onFlipHorizontal();
     void onRotate90AntiClockwise();
     void onCropAspectLock(boolean locked);
     boolean isCropAspectLocked();
-    void onRequestFullScreen(boolean fullScreen);
+    void onRequestFullScreen(boolean fullScreen, boolean hideKeyboard);
   }
 
   private static final EventListener NULL_EVENT_LISTENER = new EventListener() {
@@ -267,6 +304,10 @@ public final class ImageEditorHud extends LinearLayout {
     }
 
     @Override
+    public void onSave() {
+    }
+
+    @Override
     public void onFlipHorizontal() {
     }
 
@@ -284,7 +325,7 @@ public final class ImageEditorHud extends LinearLayout {
     }
 
     @Override
-    public void onRequestFullScreen(boolean fullScreen) {
+    public void onRequestFullScreen(boolean fullScreen, boolean hideKeyboard) {
     }
   };
 }

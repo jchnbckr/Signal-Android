@@ -1,10 +1,11 @@
 package org.thoughtcrime.securesms.jobs;
 
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobmanager.Data;
 import org.thoughtcrime.securesms.jobmanager.Job;
 import org.thoughtcrime.securesms.logging.Log;
 
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import android.util.Pair;
 
 import com.google.android.mms.pdu_alt.GenericPdu;
@@ -13,7 +14,6 @@ import com.google.android.mms.pdu_alt.PduHeaders;
 import com.google.android.mms.pdu_alt.PduParser;
 
 import org.thoughtcrime.securesms.ApplicationContext;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.MmsDatabase;
 import org.thoughtcrime.securesms.recipients.Recipient;
@@ -79,11 +79,9 @@ public class MmsReceiveJob extends BaseJob {
 
       Log.i(TAG, "Inserted received MMS notification...");
 
-      ApplicationContext.getInstance(context)
-                        .getJobManager()
-                        .add(new MmsDownloadJob(messageAndThreadId.first,
-                                                messageAndThreadId.second,
-                                                true));
+      ApplicationDependencies.getJobManager().add(new MmsDownloadJob(messageAndThreadId.first,
+                                                                     messageAndThreadId.second,
+                                                                     true));
     } else if (isNotification(pdu)) {
       Log.w(TAG, "*** Received blocked MMS, ignoring...");
     }
@@ -101,7 +99,7 @@ public class MmsReceiveJob extends BaseJob {
 
   private boolean isBlocked(GenericPdu pdu) {
     if (pdu.getFrom() != null && pdu.getFrom().getTextString() != null) {
-      Recipient recipients = Recipient.from(context, Address.fromExternal(context, Util.toIsoString(pdu.getFrom().getTextString())), false);
+      Recipient recipients = Recipient.external(context, Util.toIsoString(pdu.getFrom().getTextString()));
       return recipients.isBlocked();
     }
 

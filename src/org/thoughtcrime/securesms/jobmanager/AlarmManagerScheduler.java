@@ -6,12 +6,13 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 import com.annimon.stream.Stream;
 
 import org.thoughtcrime.securesms.ApplicationContext;
 import org.thoughtcrime.securesms.BuildConfig;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.logging.Log;
 
 import java.util.List;
@@ -61,7 +62,7 @@ public class AlarmManagerScheduler implements Scheduler {
     @Override
     public void onReceive(Context context, Intent intent) {
       Log.i(TAG, "Received an alarm to retry a job.");
-      ApplicationContext.getInstance(context).getJobManager().wakeUp();
+      ApplicationDependencies.getJobManager().wakeUp();
     }
   }
 }

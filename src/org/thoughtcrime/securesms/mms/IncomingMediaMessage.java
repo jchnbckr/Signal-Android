@@ -1,10 +1,12 @@
 package org.thoughtcrime.securesms.mms;
 
+import androidx.annotation.NonNull;
+
 import org.thoughtcrime.securesms.attachments.Attachment;
 import org.thoughtcrime.securesms.attachments.PointerAttachment;
 import org.thoughtcrime.securesms.contactshare.Contact;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.linkpreview.LinkPreview;
+import org.thoughtcrime.securesms.recipients.RecipientId;
 import org.thoughtcrime.securesms.util.GroupUtil;
 import org.whispersystems.libsignal.util.guava.Optional;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachment;
@@ -16,29 +18,31 @@ import java.util.List;
 
 public class IncomingMediaMessage {
 
-  private final Address       from;
-  private final Address       groupId;
-  private final String        body;
-  private final boolean       push;
-  private final long          sentTimeMillis;
-  private final int           subscriptionId;
-  private final long          expiresIn;
-  private final boolean       expirationUpdate;
-  private final QuoteModel    quote;
-  private final boolean       unidentified;
+  private final RecipientId from;
+  private final String      groupId;
+  private final String      body;
+  private final boolean     push;
+  private final long        sentTimeMillis;
+  private final int         subscriptionId;
+  private final long        expiresIn;
+  private final boolean     expirationUpdate;
+  private final QuoteModel  quote;
+  private final boolean     unidentified;
+  private final boolean     viewOnce;
 
   private final List<Attachment>  attachments    = new LinkedList<>();
   private final List<Contact>     sharedContacts = new LinkedList<>();
   private final List<LinkPreview> linkPreviews   = new LinkedList<>();
 
-  public IncomingMediaMessage(Address from,
-                              Optional<Address> groupId,
+  public IncomingMediaMessage(@NonNull RecipientId from,
+                              Optional<String> groupId,
                               String body,
                               long sentTimeMillis,
                               List<Attachment> attachments,
                               int subscriptionId,
                               long expiresIn,
                               boolean expirationUpdate,
+                              boolean viewOnce,
                               boolean unidentified)
   {
     this.from             = from;
@@ -49,17 +53,19 @@ public class IncomingMediaMessage {
     this.subscriptionId   = subscriptionId;
     this.expiresIn        = expiresIn;
     this.expirationUpdate = expirationUpdate;
+    this.viewOnce         = viewOnce;
     this.quote            = null;
     this.unidentified     = unidentified;
 
     this.attachments.addAll(attachments);
   }
 
-  public IncomingMediaMessage(Address from,
+  public IncomingMediaMessage(@NonNull RecipientId from,
                               long sentTimeMillis,
                               int subscriptionId,
                               long expiresIn,
                               boolean expirationUpdate,
+                              boolean viewOnce,
                               boolean unidentified,
                               Optional<String> body,
                               Optional<SignalServiceGroup> group,
@@ -76,10 +82,11 @@ public class IncomingMediaMessage {
     this.subscriptionId   = subscriptionId;
     this.expiresIn        = expiresIn;
     this.expirationUpdate = expirationUpdate;
+    this.viewOnce         = viewOnce;
     this.quote            = quote.orNull();
     this.unidentified     = unidentified;
 
-    if (group.isPresent()) this.groupId = Address.fromSerialized(GroupUtil.getEncodedId(group.get().getGroupId(), false));
+    if (group.isPresent()) this.groupId = GroupUtil.getEncodedId(group.get().getGroupId(), false);
     else                   this.groupId = null;
 
     this.attachments.addAll(PointerAttachment.forPointers(attachments));
@@ -103,11 +110,11 @@ public class IncomingMediaMessage {
     return attachments;
   }
 
-  public Address getFrom() {
+  public @NonNull RecipientId getFrom() {
     return from;
   }
 
-  public Address getGroupId() {
+  public String getGroupId() {
     return groupId;
   }
 
@@ -125,6 +132,10 @@ public class IncomingMediaMessage {
 
   public long getExpiresIn() {
     return expiresIn;
+  }
+
+  public boolean isViewOnce() {
+    return viewOnce;
   }
 
   public boolean isGroupMessage() {

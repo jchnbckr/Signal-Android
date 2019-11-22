@@ -5,15 +5,14 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.database.MergeCursor;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import android.text.TextUtils;
 
 import com.annimon.stream.Stream;
 
 
 import org.thoughtcrime.securesms.contacts.ContactAccessor;
-import org.thoughtcrime.securesms.contacts.ContactsDatabase;
-import org.thoughtcrime.securesms.database.Address;
+import org.thoughtcrime.securesms.contacts.ContactRepository;
 import org.thoughtcrime.securesms.database.CursorList;
 import org.thoughtcrime.securesms.database.MmsSmsColumns;
 import org.thoughtcrime.securesms.database.SearchDatabase;
@@ -22,11 +21,11 @@ import org.thoughtcrime.securesms.database.model.ThreadRecord;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.permissions.Permissions;
 import org.thoughtcrime.securesms.recipients.Recipient;
+import org.thoughtcrime.securesms.recipients.RecipientId;
 import org.thoughtcrime.securesms.search.model.MessageResult;
 import org.thoughtcrime.securesms.search.model.SearchResult;
 import org.thoughtcrime.securesms.util.Stopwatch;
 
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -56,26 +55,26 @@ public class SearchRepository {
     }
   }
 
-  private final Context          context;
-  private final SearchDatabase   searchDatabase;
-  private final ContactsDatabase contactsDatabase;
-  private final ThreadDatabase   threadDatabase;
-  private final ContactAccessor  contactAccessor;
-  private final Executor         executor;
+  private final Context           context;
+  private final SearchDatabase    searchDatabase;
+  private final ContactRepository contactRepository;
+  private final ThreadDatabase    threadDatabase;
+  private final ContactAccessor   contactAccessor;
+  private final Executor          executor;
 
   public SearchRepository(@NonNull Context context,
                           @NonNull SearchDatabase searchDatabase,
-                          @NonNull ContactsDatabase contactsDatabase,
                           @NonNull ThreadDatabase threadDatabase,
+                          @NonNull ContactRepository contactRepository,
                           @NonNull ContactAccessor contactAccessor,
                           @NonNull Executor executor)
   {
-    this.context          = context.getApplicationContext();
-    this.searchDatabase   = searchDatabase;
-    this.contactsDatabase = contactsDatabase;
-    this.threadDatabase   = threadDatabase;
-    this.contactAccessor  = contactAccessor;
-    this.executor         = executor;
+    this.context           = context.getApplicationContext();
+    this.searchDatabase    = searchDatabase;
+    this.threadDatabase    = threadDatabase;
+    this.contactRepository = contactRepository;
+    this.contactAccessor   = contactAccessor;
+    this.executor          = executor;
   }
 
   public void query(@NonNull String query, @NonNull Callback<SearchResult> callback) {
@@ -125,18 +124,18 @@ public class SearchRepository {
       return CursorList.emptyList();
     }
 
-    Cursor      textSecureContacts = contactsDatabase.queryTextSecureContacts(query);
-    Cursor      systemContacts     = contactsDatabase.querySystemContacts(query);
+    Cursor      textSecureContacts = contactRepository.querySignalContacts(query);
+    Cursor      systemContacts     = contactRepository.queryNonSignalContacts(query);
     MergeCursor contacts           = new MergeCursor(new Cursor[]{ textSecureContacts, systemContacts });
 
-    return new CursorList<>(contacts, new RecipientModelBuilder(context));
+    return new CursorList<>(contacts, new RecipientModelBuilder());
   }
 
   private CursorList<ThreadRecord> queryConversations(@NonNull String query) {
-    List<String>  numbers   = contactAccessor.getNumbersForThreadSearchFilter(context, query);
-    List<Address> addresses = Stream.of(numbers).map(number -> Address.fromExternal(context, number)).toList();
+    List<String>      numbers      = contactAccessor.getNumbersForThreadSearchFilter(context, query);
+    List<RecipientId> recipientIds = Stream.of(numbers).map(number -> Recipient.external(context, number)).map(Recipient::getId).toList();
 
-    Cursor conversations = threadDatabase.getFilteredConversationList(addresses);
+    Cursor conversations = threadDatabase.getFilteredConversationList(recipientIds);
     return conversations != null ? new CursorList<>(conversations, new ThreadModelBuilder(threadDatabase))
                                  : CursorList.emptyList();
   }
@@ -177,16 +176,10 @@ public class SearchRepository {
 
   private static class RecipientModelBuilder implements CursorList.ModelBuilder<Recipient> {
 
-    private final Context context;
-
-    RecipientModelBuilder(@NonNull Context context) {
-      this.context = context;
-    }
-
     @Override
     public Recipient build(@NonNull Cursor cursor) {
-      Address address = Address.fromExternal(context, cursor.getString(1));
-      return Recipient.from(context, address, false);
+      long recipientId = cursor.getLong(cursor.getColumnIndexOrThrow(ContactRepository.ID_COLUMN));
+      return Recipient.resolved(RecipientId.from(recipientId));
     }
   }
 
@@ -214,13 +207,13 @@ public class SearchRepository {
 
     @Override
     public MessageResult build(@NonNull Cursor cursor) {
-      Address   conversationAddress   = Address.fromSerialized(cursor.getString(cursor.getColumnIndex(SearchDatabase.CONVERSATION_ADDRESS)));
-      Address   messageAddress        = Address.fromSerialized(cursor.getString(cursor.getColumnIndexOrThrow(SearchDatabase.MESSAGE_ADDRESS)));
-      Recipient conversationRecipient = Recipient.from(context, conversationAddress, false);
-      Recipient messageRecipient      = Recipient.from(context, messageAddress, false);
-      String    body                  = cursor.getString(cursor.getColumnIndexOrThrow(SearchDatabase.SNIPPET));
-      long      receivedMs            = cursor.getLong(cursor.getColumnIndexOrThrow(MmsSmsColumns.NORMALIZED_DATE_RECEIVED));
-      long      threadId              = cursor.getLong(cursor.getColumnIndexOrThrow(MmsSmsColumns.THREAD_ID));
+      RecipientId conversationRecipientId = RecipientId.from(cursor.getLong(cursor.getColumnIndex(SearchDatabase.CONVERSATION_RECIPIENT)));
+      RecipientId messageRecipientId      = RecipientId.from(cursor.getLong(cursor.getColumnIndexOrThrow(SearchDatabase.MESSAGE_RECIPIENT)));
+      Recipient   conversationRecipient   = Recipient.live(conversationRecipientId).get();
+      Recipient   messageRecipient        = Recipient.live(messageRecipientId).get();
+      String      body                    = cursor.getString(cursor.getColumnIndexOrThrow(SearchDatabase.SNIPPET));
+      long        receivedMs              = cursor.getLong(cursor.getColumnIndexOrThrow(MmsSmsColumns.NORMALIZED_DATE_RECEIVED));
+      long        threadId                = cursor.getLong(cursor.getColumnIndexOrThrow(MmsSmsColumns.THREAD_ID));
 
       return new MessageResult(conversationRecipient, messageRecipient, body, threadId, receivedMs);
     }

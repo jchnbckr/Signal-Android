@@ -3,15 +3,13 @@ package org.thoughtcrime.securesms.components;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Color;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import android.text.Editable;
-import android.text.InputFilter;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.TextView;
@@ -85,5 +83,11 @@ public class LabeledEditText extends FrameLayout implements View.OnFocusChangeLi
   public void onFocusChange(View v, boolean hasFocus) {
     border.setBackgroundResource(hasFocus ? R.drawable.labeled_edit_text_background_active
                                           : R.drawable.labeled_edit_text_background_inactive);
+  }
+
+  @Override
+  public void setEnabled(boolean enabled) {
+    super.setEnabled(enabled);
+    input.setEnabled(enabled);
   }
 }

@@ -18,82 +18,78 @@ package org.thoughtcrime.securesms;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
-import android.arch.lifecycle.ViewModelProviders;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.AsyncTask;
-import android.os.Build.VERSION;
-import android.os.Build.VERSION_CODES;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v4.app.LoaderManager;
-import android.support.v4.content.Loader;
-import android.support.v4.util.Pair;
-import android.support.v4.view.PagerAdapter;
-import android.support.v4.view.ViewPager;
-import android.support.v7.app.AlertDialog;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
-import android.view.GestureDetector;
-import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
-import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.util.Pair;
+import androidx.core.view.ViewCompat;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentStatePagerAdapter;
+import androidx.lifecycle.ViewModelProviders;
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.Loader;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.viewpager.widget.ViewPager;
+
+import org.thoughtcrime.securesms.animation.DepthPageTransformer;
 import org.thoughtcrime.securesms.attachments.DatabaseAttachment;
-import org.thoughtcrime.securesms.components.MediaView;
 import org.thoughtcrime.securesms.components.viewpager.ExtendedOnPageChangedListener;
-import org.thoughtcrime.securesms.database.Address;
+import org.thoughtcrime.securesms.database.MediaDatabase;
 import org.thoughtcrime.securesms.database.MediaDatabase.MediaRecord;
 import org.thoughtcrime.securesms.database.loaders.PagingMediaLoader;
 import org.thoughtcrime.securesms.logging.Log;
+import org.thoughtcrime.securesms.mediapreview.MediaPreviewFragment;
 import org.thoughtcrime.securesms.mediapreview.MediaPreviewViewModel;
 import org.thoughtcrime.securesms.mediapreview.MediaRailAdapter;
 import org.thoughtcrime.securesms.mms.GlideApp;
-import org.thoughtcrime.securesms.mms.GlideRequests;
 import org.thoughtcrime.securesms.permissions.Permissions;
 import org.thoughtcrime.securesms.recipients.Recipient;
-import org.thoughtcrime.securesms.recipients.RecipientModifiedListener;
+import org.thoughtcrime.securesms.recipients.RecipientId;
 import org.thoughtcrime.securesms.util.AttachmentUtil;
 import org.thoughtcrime.securesms.util.DateUtils;
-import org.thoughtcrime.securesms.util.DynamicLanguage;
 import org.thoughtcrime.securesms.util.SaveAttachmentTask;
 import org.thoughtcrime.securesms.util.SaveAttachmentTask.Attachment;
 import org.thoughtcrime.securesms.util.Util;
 
-import java.io.IOException;
-import java.util.WeakHashMap;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * Activity for displaying media attachments in-app
  */
-public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity implements RecipientModifiedListener,
-                                                                                         LoaderManager.LoaderCallbacks<Pair<Cursor, Integer>>,
-                                                                                         MediaRailAdapter.RailItemListener
+public final class MediaPreviewActivity extends PassphraseRequiredActionBarActivity
+  implements LoaderManager.LoaderCallbacks<Pair<Cursor, Integer>>,
+             MediaRailAdapter.RailItemListener,
+             MediaPreviewFragment.Events
 {
 
   private final static String TAG = MediaPreviewActivity.class.getSimpleName();
 
-  public static final String ADDRESS_EXTRA        = "address";
+  public static final String RECIPIENT_EXTRA      = "recipient_id";
   public static final String DATE_EXTRA           = "date";
   public static final String SIZE_EXTRA           = "size";
   public static final String CAPTION_EXTRA        = "caption";
   public static final String OUTGOING_EXTRA       = "outgoing";
   public static final String LEFT_IS_RECENT_EXTRA = "left_is_recent";
-
-  private final DynamicLanguage dynamicLanguage = new DynamicLanguage();
 
   private ViewPager             mediaPager;
   private View                  detailsContainer;
@@ -108,27 +104,27 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
   private String                initialCaption;
   private Recipient             conversationRecipient;
   private boolean               leftIsRecent;
-  private GestureDetector       clickDetector;
   private MediaPreviewViewModel viewModel;
   private ViewPagerListener     viewPagerListener;
 
   private int restartItem = -1;
 
-
   @SuppressWarnings("ConstantConditions")
   @Override
   protected void onCreate(Bundle bundle, boolean ready) {
-    this.setTheme(R.style.TextSecure_DarkTheme);
-    dynamicLanguage.onCreate(this);
+    this.setTheme(R.style.TextSecure_MediaPreview);
+    setContentView(R.layout.media_preview_activity);
+
+    setSupportActionBar(findViewById(R.id.toolbar));
 
     viewModel = ViewModelProviders.of(this).get(MediaPreviewViewModel.class);
 
-    setFullscreenIfPossible();
     getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
                          WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
+    showSystemUI();
+
     getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-    setContentView(R.layout.media_preview_activity);
 
     initializeViews();
     initializeResources();
@@ -136,26 +132,8 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
   }
 
   @Override
-  public boolean dispatchTouchEvent(MotionEvent ev) {
-    clickDetector.onTouchEvent(ev);
-    return super.dispatchTouchEvent(ev);
-  }
-
-  @Override
   public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
     Permissions.onRequestPermissionsResult(this, requestCode, permissions, grantResults);
-  }
-
-  @TargetApi(VERSION_CODES.JELLY_BEAN)
-  private void setFullscreenIfPossible() {
-    if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN) {
-      getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN);
-    }
-  }
-
-  @Override
-  public void onModified(Recipient recipient) {
-    Util.runOnMain(this::initializeActionBar);
   }
 
   @Override
@@ -176,13 +154,13 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
       CharSequence relativeTimeSpan;
 
       if (mediaItem.date > 0) {
-        relativeTimeSpan = DateUtils.getExtendedRelativeTimeSpanString(this,dynamicLanguage.getCurrentLocale(), mediaItem.date);
+        relativeTimeSpan = DateUtils.getExtendedRelativeTimeSpanString(this, Locale.getDefault(), mediaItem.date);
       } else {
         relativeTimeSpan = getString(R.string.MediaPreviewActivity_draft);
       }
 
       if      (mediaItem.outgoing)          getSupportActionBar().setTitle(getString(R.string.MediaPreviewActivity_you));
-      else if (mediaItem.recipient != null) getSupportActionBar().setTitle(mediaItem.recipient.toShortString());
+      else if (mediaItem.recipient != null) getSupportActionBar().setTitle(mediaItem.recipient.toShortString(this));
       else                                  getSupportActionBar().setTitle("");
 
       getSupportActionBar().setSubtitle(relativeTimeSpan);
@@ -193,7 +171,6 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
   public void onResume() {
     super.onResume();
 
-    dynamicLanguage.onResume(this);
     initializeMedia();
   }
 
@@ -213,6 +190,7 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
   private void initializeViews() {
     mediaPager = findViewById(R.id.media_pager);
     mediaPager.setOffscreenPageLimit(1);
+    mediaPager.setPageTransformer(true, new DepthPageTransformer());
 
     viewPagerListener = new ViewPagerListener();
     mediaPager.addOnPageChangeListener(viewPagerListener);
@@ -227,10 +205,18 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
     caption                   = findViewById(R.id.media_preview_caption);
     captionContainer          = findViewById(R.id.media_preview_caption_container);
     playbackControlsContainer = findViewById(R.id.media_preview_playback_controls_container);
+
+    View toolbarLayout = findViewById(R.id.toolbar_layout);
+
+    anchorMarginsToBottomInsets(detailsContainer);
+
+    anchorMarginsToTopInsets(toolbarLayout);
+
+    showAndHideWithSystemUI(getWindow(), detailsContainer, toolbarLayout);
   }
 
   private void initializeResources() {
-    Address address = getIntent().getParcelableExtra(ADDRESS_EXTRA);
+    RecipientId recipientId = getIntent().getParcelableExtra(RECIPIENT_EXTRA);
 
     initialMediaUri  = getIntent().getData();
     initialMediaType = getIntent().getType();
@@ -239,8 +225,8 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
     leftIsRecent     = getIntent().getBooleanExtra(LEFT_IS_RECENT_EXTRA, false);
     restartItem      = -1;
 
-    if (address != null) {
-      conversationRecipient = Recipient.from(this, address, true);
+    if (recipientId != null) {
+      conversationRecipient = Recipient.live(recipientId).get();
     } else {
       conversationRecipient = null;
     }
@@ -250,6 +236,11 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
     viewModel.getPreviewData().observe(this, previewData -> {
       if (previewData == null || mediaPager == null || mediaPager.getAdapter() == null) {
         return;
+      }
+
+      if (!((MediaItemAdapter) mediaPager.getAdapter()).hasFragmentFor(mediaPager.getCurrentItem())) {
+        Log.d(TAG, "MediaItemAdapter wasn't ready. Posting again...");
+        viewModel.resubmitPreviewData();
       }
 
       View playbackControls = ((MediaItemAdapter) mediaPager.getAdapter()).getPlaybackControls(mediaPager.getCurrentItem());
@@ -277,16 +268,6 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
         playbackControlsContainer.removeAllViews();
       }
     });
-
-    clickDetector = new GestureDetector(new GestureDetector.SimpleOnGestureListener() {
-      @Override
-      public boolean onSingleTapUp(MotionEvent e) {
-        if (e.getY() < detailsContainer.getTop()) {
-          detailsContainer.setVisibility(detailsContainer.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
-        }
-        return super.onSingleTapUp(e);
-      }
-    });
   }
 
   private void initializeMedia() {
@@ -299,9 +280,9 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
     Log.i(TAG, "Loading Part URI: " + initialMediaUri);
 
     if (conversationRecipient != null) {
-      getSupportLoaderManager().restartLoader(0, null, this);
+      LoaderManager.getInstance(this).restartLoader(0, null, this);
     } else {
-      mediaPager.setAdapter(new SingleItemPagerAdapter(this, GlideApp.with(this), getWindow(), initialMediaUri, initialMediaType, initialMediaSize));
+      mediaPager.setAdapter(new SingleItemPagerAdapter(getSupportFragmentManager(), initialMediaUri, initialMediaType, initialMediaSize));
 
       if (initialCaption != null) {
         detailsContainer.setVisibility(View.VISIBLE);
@@ -322,7 +303,7 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
 
   private void showOverview() {
     Intent intent = new Intent(this, MediaOverviewActivity.class);
-    intent.putExtra(MediaOverviewActivity.ADDRESS_EXTRA, conversationRecipient.getAddress());
+    intent.putExtra(MediaOverviewActivity.RECIPIENT_EXTRA, conversationRecipient.getId());
     startActivity(intent);
   }
 
@@ -376,9 +357,6 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
       new AsyncTask<Void, Void, Void>() {
         @Override
         protected Void doInBackground(Void... voids) {
-          if (mediaItem.attachment == null) {
-            return null;
-          }
           AttachmentUtil.deleteAttachment(MediaPreviewActivity.this.getApplicationContext(),
                                           mediaItem.attachment);
           return null;
@@ -449,7 +427,7 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
   public void onLoadFinished(@NonNull Loader<Pair<Cursor, Integer>> loader, @Nullable Pair<Cursor, Integer> data) {
     if (data != null) {
       @SuppressWarnings("ConstantConditions")
-      CursorPagerAdapter adapter = new CursorPagerAdapter(this, GlideApp.with(this), getWindow(), data.first, data.second, leftIsRecent);
+      CursorPagerAdapter adapter = new CursorPagerAdapter(getSupportFragmentManager(),this, data.first, data.second, leftIsRecent);
       mediaPager.setAdapter(adapter);
       adapter.setActive(true);
 
@@ -469,6 +447,38 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
 
   }
 
+  @Override
+  public boolean singleTapOnMedia() {
+    toggleUiVisibility();
+    return true;
+  }
+
+  private void toggleUiVisibility() {
+    int systemUiVisibility = getWindow().getDecorView().getSystemUiVisibility();
+    if ((systemUiVisibility & View.SYSTEM_UI_FLAG_FULLSCREEN) != 0) {
+      showSystemUI();
+    } else {
+      hideSystemUI();
+    }
+  }
+
+  private void hideSystemUI() {
+    getWindow().getDecorView().setSystemUiVisibility(
+        View.SYSTEM_UI_FLAG_IMMERSIVE              |
+        View.SYSTEM_UI_FLAG_LAYOUT_STABLE          |
+        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN      |
+        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION        |
+        View.SYSTEM_UI_FLAG_FULLSCREEN              );
+  }
+
+  private void showSystemUI() {
+    getWindow().getDecorView().setSystemUiVisibility(
+        View.SYSTEM_UI_FLAG_LAYOUT_STABLE          |
+        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN       );
+  }
+
   private class ViewPagerListener extends ExtendedOnPageChangedListener {
 
     @Override
@@ -479,7 +489,7 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
 
       if (adapter != null) {
         MediaItem item = adapter.getMediaItemFor(position);
-        if (item.recipient != null) item.recipient.addListener(MediaPreviewActivity.this);
+        if (item.recipient != null) item.recipient.live().observe(MediaPreviewActivity.this, r -> initializeActionBar());
         viewModel.setActiveAlbumRailItem(MediaPreviewActivity.this, position);
         initializeActionBar();
       }
@@ -492,33 +502,30 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
 
       if (adapter != null) {
         MediaItem item = adapter.getMediaItemFor(position);
-        if (item.recipient != null) item.recipient.removeListener(MediaPreviewActivity.this);
+        if (item.recipient != null) item.recipient.live().removeObservers(MediaPreviewActivity.this);
 
         adapter.pause(position);
       }
     }
   }
 
-  private static class SingleItemPagerAdapter extends PagerAdapter implements MediaItemAdapter {
+  private static class SingleItemPagerAdapter extends FragmentStatePagerAdapter implements MediaItemAdapter {
 
-    private final GlideRequests glideRequests;
-    private final Window        window;
-    private final Uri           uri;
-    private final String        mediaType;
-    private final long          size;
+    private final Uri    uri;
+    private final String mediaType;
+    private final long   size;
 
-    private final LayoutInflater inflater;
+    private MediaPreviewFragment mediaPreviewFragment;
 
-    SingleItemPagerAdapter(@NonNull Context context, @NonNull GlideRequests glideRequests,
-                           @NonNull Window window, @NonNull Uri uri, @NonNull String mediaType,
+    SingleItemPagerAdapter(@NonNull FragmentManager fragmentManager,
+                           @NonNull Uri uri,
+                           @NonNull String mediaType,
                            long size)
     {
-      this.glideRequests = glideRequests;
-      this.window        = window;
-      this.uri           = uri;
-      this.mediaType     = mediaType;
-      this.size          = size;
-      this.inflater      = LayoutInflater.from(context);
+      super(fragmentManager, BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT);
+      this.uri       = uri;
+      this.mediaType = mediaType;
+      this.size      = size;
     }
 
     @Override
@@ -526,33 +533,19 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
       return 1;
     }
 
+    @NonNull
     @Override
-    public boolean isViewFromObject(@NonNull View view, @NonNull Object object) {
-      return view == object;
-    }
-
-    @Override
-    public @NonNull Object instantiateItem(@NonNull ViewGroup container, int position) {
-      View      itemView  = inflater.inflate(R.layout.media_view_page, container, false);
-      MediaView mediaView = itemView.findViewById(R.id.media_view);
-
-      try {
-        mediaView.set(glideRequests, window, uri, mediaType, size, true);
-      } catch (IOException e) {
-        Log.w(TAG, e);
-      }
-
-      container.addView(itemView);
-
-      return itemView;
+    public Fragment getItem(int position) {
+      mediaPreviewFragment = MediaPreviewFragment.newInstance(uri, mediaType, size, true);
+      return mediaPreviewFragment;
     }
 
     @Override
     public void destroyItem(@NonNull ViewGroup container, int position, @NonNull Object object) {
-      MediaView mediaView = ((FrameLayout)object).findViewById(R.id.media_view);
-      mediaView.cleanup();
-
-      container.removeView((FrameLayout)object);
+      if (mediaPreviewFragment != null) {
+        mediaPreviewFragment.cleanUp();
+        mediaPreviewFragment = null;
+      }
     }
 
     @Override
@@ -562,35 +555,87 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
 
     @Override
     public void pause(int position) {
-
+      if (mediaPreviewFragment != null) {
+        mediaPreviewFragment.pause();
+      }
     }
 
     @Override
     public @Nullable View getPlaybackControls(int position) {
+      if (mediaPreviewFragment != null) {
+        return mediaPreviewFragment.getPlaybackControls();
+      }
       return null;
+    }
+
+    @Override
+    public boolean hasFragmentFor(int position) {
+      return mediaPreviewFragment != null;
     }
   }
 
-  private static class CursorPagerAdapter extends PagerAdapter implements MediaItemAdapter {
+  private static void anchorMarginsToBottomInsets(@NonNull View viewToAnchor) {
+    ViewCompat.setOnApplyWindowInsetsListener(viewToAnchor, (view, insets) -> {
+      ViewGroup.MarginLayoutParams layoutParams = (ViewGroup.MarginLayoutParams) view.getLayoutParams();
 
-    private final WeakHashMap<Integer, MediaView> mediaViews = new WeakHashMap<>();
+      layoutParams.setMargins(insets.getSystemWindowInsetLeft(),
+                              layoutParams.topMargin,
+                              insets.getSystemWindowInsetRight(),
+                              insets.getSystemWindowInsetBottom());
 
-    private final Context       context;
-    private final GlideRequests glideRequests;
-    private final Window        window;
-    private final Cursor        cursor;
-    private final boolean       leftIsRecent;
+      view.setLayoutParams(layoutParams);
+
+      return insets;
+    });
+  }
+
+  private static void anchorMarginsToTopInsets(@NonNull View viewToAnchor) {
+    ViewCompat.setOnApplyWindowInsetsListener(viewToAnchor, (view, insets) -> {
+      ViewGroup.MarginLayoutParams layoutParams = (ViewGroup.MarginLayoutParams) view.getLayoutParams();
+
+      layoutParams.setMargins(insets.getSystemWindowInsetLeft(),
+                              insets.getSystemWindowInsetTop(),
+                              insets.getSystemWindowInsetRight(),
+                              layoutParams.bottomMargin);
+
+      view.setLayoutParams(layoutParams);
+
+      return insets;
+    });
+  }
+
+  private static void showAndHideWithSystemUI(@NonNull Window window, @NonNull View... views) {
+    window.getDecorView().setOnSystemUiVisibilityChangeListener(visibility -> {
+      boolean hide = (visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) != 0;
+
+      for (View view : views) {
+        view.animate()
+            .alpha(hide ? 0 : 1)
+            .start();
+      }
+    });
+  }
+
+  private static class CursorPagerAdapter extends FragmentStatePagerAdapter implements MediaItemAdapter {
+
+    @SuppressLint("UseSparseArrays")
+    private final Map<Integer, MediaPreviewFragment> mediaFragments = new HashMap<>();
+
+    private final Context context;
+    private final Cursor  cursor;
+    private final boolean leftIsRecent;
 
     private boolean active;
     private int     autoPlayPosition;
 
-    CursorPagerAdapter(@NonNull Context context, @NonNull GlideRequests glideRequests,
-                       @NonNull Window window, @NonNull Cursor cursor, int autoPlayPosition,
+    CursorPagerAdapter(@NonNull FragmentManager fragmentManager,
+                       @NonNull Context context,
+                       @NonNull Cursor cursor,
+                       int autoPlayPosition,
                        boolean leftIsRecent)
     {
+      super(fragmentManager, BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT);
       this.context          = context.getApplicationContext();
-      this.glideRequests    = glideRequests;
-      this.window           = window;
       this.cursor           = cursor;
       this.autoPlayPosition = autoPlayPosition;
       this.leftIsRecent     = leftIsRecent;
@@ -607,55 +652,44 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
       else         return cursor.getCount();
     }
 
+    @NonNull
     @Override
-    public boolean isViewFromObject(@NonNull View view, @NonNull Object object) {
-      return view == object;
-    }
-
-    @Override
-    public @NonNull Object instantiateItem(@NonNull ViewGroup container, int position) {
-      View      itemView       = LayoutInflater.from(context).inflate(R.layout.media_view_page, container, false);
-      MediaView mediaView      = itemView.findViewById(R.id.media_view);
-      boolean   autoplay       = position == autoPlayPosition;
-      int       cursorPosition = getCursorPosition(position);
+    public Fragment getItem(int position) {
+      boolean autoPlay = autoPlayPosition == position;
+      int cursorPosition = getCursorPosition(position);
 
       autoPlayPosition = -1;
 
       cursor.moveToPosition(cursorPosition);
 
-      MediaRecord mediaRecord = MediaRecord.from(context, cursor);
+      MediaDatabase.MediaRecord mediaRecord = MediaDatabase.MediaRecord.from(context, cursor);
+      DatabaseAttachment        attachment  = mediaRecord.getAttachment();
+      MediaPreviewFragment      fragment    = MediaPreviewFragment.newInstance(attachment, autoPlay);
 
-      try {
-        //noinspection ConstantConditions
-        mediaView.set(glideRequests, window, mediaRecord.getAttachment().getDataUri(),
-                      mediaRecord.getAttachment().getContentType(), mediaRecord.getAttachment().getSize(), autoplay);
-      } catch (IOException e) {
-        Log.w(TAG, e);
-      }
+      mediaFragments.put(position, fragment);
 
-      mediaViews.put(position, mediaView);
-      container.addView(itemView);
-
-      return itemView;
+      return fragment;
     }
 
     @Override
     public void destroyItem(@NonNull ViewGroup container, int position, @NonNull Object object) {
-      MediaView mediaView = ((FrameLayout)object).findViewById(R.id.media_view);
-      mediaView.cleanup();
+      MediaPreviewFragment removed = mediaFragments.remove(position);
 
-      mediaViews.remove(position);
-      container.removeView((FrameLayout)object);
+      if (removed != null) {
+        removed.cleanUp();
+      }
+
+      super.destroyItem(container, position, object);
     }
 
     public MediaItem getMediaItemFor(int position) {
       cursor.moveToPosition(getCursorPosition(position));
       MediaRecord mediaRecord = MediaRecord.from(context, cursor);
-      Address     address     = mediaRecord.getAddress();
+      RecipientId recipientId = mediaRecord.getRecipientId();
 
       if (mediaRecord.getAttachment().getDataUri() == null) throw new AssertionError();
 
-      return new MediaItem(address != null ? Recipient.from(context, address,true) : null,
+      return new MediaItem(Recipient.live(recipientId).get(),
                            mediaRecord.getAttachment(),
                            mediaRecord.getAttachment().getDataUri(),
                            mediaRecord.getContentType(),
@@ -665,15 +699,20 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
 
     @Override
     public void pause(int position) {
-      MediaView mediaView = mediaViews.get(position);
+      MediaPreviewFragment mediaView = mediaFragments.get(position);
       if (mediaView != null) mediaView.pause();
     }
 
     @Override
     public @Nullable View getPlaybackControls(int position) {
-      MediaView mediaView = mediaViews.get(position);
+      MediaPreviewFragment mediaView = mediaFragments.get(position);
       if (mediaView != null) return mediaView.getPlaybackControls();
       return null;
+    }
+
+    @Override
+    public boolean hasFragmentFor(int position) {
+      return mediaFragments.containsKey(position);
     }
 
     private int getCursorPosition(int position) {
@@ -710,5 +749,6 @@ public class MediaPreviewActivity extends PassphraseRequiredActionBarActivity im
     MediaItem getMediaItemFor(int position);
     void pause(int position);
     @Nullable View getPlaybackControls(int position);
+    boolean hasFragmentFor(int position);
   }
 }

@@ -4,13 +4,13 @@ import android.annotation.TargetApi;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Build;
-import android.support.annotation.DimenRes;
-import android.support.annotation.MainThread;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v4.view.ViewCompat;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
+import androidx.annotation.DimenRes;
+import androidx.annotation.MainThread;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.view.ViewCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import android.text.format.DateUtils;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
@@ -150,8 +150,14 @@ public class InputPanel extends LinearLayout
     composeText.setMediaListener(listener);
   }
 
-  public void setQuote(@NonNull GlideRequests glideRequests, long id, @NonNull Recipient author, @NonNull String body, @NonNull SlideDeck attachments) {
-    this.quoteView.setQuote(glideRequests, id, author, body, false, attachments);
+  public void setQuote(@NonNull GlideRequests glideRequests,
+                       long id,
+                       @NonNull Recipient author,
+                       @NonNull String body,
+                       @NonNull SlideDeck attachments,
+                       boolean isViewOnce)
+  {
+    this.quoteView.setQuote(glideRequests, id, author, body, false, attachments, isViewOnce);
     this.quoteView.setVisibility(View.VISIBLE);
 
     if (this.linkPreview.getVisibility() == View.VISIBLE) {
@@ -171,7 +177,7 @@ public class InputPanel extends LinearLayout
 
   public Optional<QuoteModel> getQuote() {
     if (quoteView.getQuoteId() > 0 && quoteView.getVisibility() == View.VISIBLE) {
-      return Optional.of(new QuoteModel(quoteView.getQuoteId(), quoteView.getAuthor().getAddress(), quoteView.getBody(), false, quoteView.getAttachments()));
+      return Optional.of(new QuoteModel(quoteView.getQuoteId(), quoteView.getAuthor().getId(), quoteView.getBody(), false, quoteView.getAttachments()));
     } else {
       return Optional.absent();
     }
@@ -194,6 +200,10 @@ public class InputPanel extends LinearLayout
                                                             : readDimen(R.dimen.message_corner_radius);
 
     this.linkPreview.setCorners(cornerRadius, cornerRadius);
+  }
+
+  public void clickOnComposeInput() {
+    composeText.performClick();
   }
 
   public void setMediaKeyboard(@NonNull MediaKeyboard mediaKeyboard) {

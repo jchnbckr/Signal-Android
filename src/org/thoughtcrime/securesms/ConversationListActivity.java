@@ -25,16 +25,18 @@ import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.v7.widget.Toolbar;
-import android.support.v7.widget.TooltipCompat;
 import android.text.TextUtils;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.widget.Toolbar;
+import androidx.appcompat.widget.TooltipCompat;
 
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
 
@@ -45,9 +47,9 @@ import org.thoughtcrime.securesms.contacts.avatars.ContactColors;
 import org.thoughtcrime.securesms.contacts.avatars.GeneratedContactPhoto;
 import org.thoughtcrime.securesms.contacts.avatars.ProfileContactPhoto;
 import org.thoughtcrime.securesms.conversation.ConversationActivity;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.MessagingDatabase.MarkedMessageInfo;
+import org.thoughtcrime.securesms.insights.InsightsLauncher;
 import org.thoughtcrime.securesms.lock.RegistrationLockDialog;
 import org.thoughtcrime.securesms.mms.GlideApp;
 import org.thoughtcrime.securesms.notifications.MarkReadReceiver;
@@ -60,13 +62,14 @@ import org.thoughtcrime.securesms.util.DynamicLanguage;
 import org.thoughtcrime.securesms.util.DynamicNoActionBarTheme;
 import org.thoughtcrime.securesms.util.DynamicTheme;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
+import org.thoughtcrime.securesms.util.ViewUtil;
 import org.thoughtcrime.securesms.util.concurrent.SimpleTask;
 import org.whispersystems.libsignal.util.guava.Optional;
 
 import java.util.List;
 
 public class ConversationListActivity extends PassphraseRequiredActionBarActivity
-    implements ConversationListFragment.ConversationSelectedListener
+    implements ConversationListFragment.Controller
 {
   @SuppressWarnings("unused")
   private static final String TAG = ConversationListActivity.class.getSimpleName();
@@ -79,6 +82,7 @@ public class ConversationListActivity extends PassphraseRequiredActionBarActivit
   private SearchToolbar            searchToolbar;
   private ImageView                searchAction;
   private ViewGroup                fragmentContainer;
+  private View                     toolbarShadow;
 
   @Override
   protected void onPreCreate() {
@@ -96,6 +100,7 @@ public class ConversationListActivity extends PassphraseRequiredActionBarActivit
     searchToolbar            = findViewById(R.id.search_toolbar);
     searchAction             = findViewById(R.id.search_action);
     fragmentContainer        = findViewById(R.id.fragment_container);
+    toolbarShadow            = findViewById(R.id.conversation_list_toolbar_shadow);
     conversationListFragment = initFragment(R.id.fragment_container, new ConversationListFragment(), dynamicLanguage.getCurrentLocale());
 
     initializeSearchListener();
@@ -112,9 +117,7 @@ public class ConversationListActivity extends PassphraseRequiredActionBarActivit
     dynamicTheme.onResume(this);
     dynamicLanguage.onResume(this);
 
-    SimpleTask.run(getLifecycle(), () -> {
-      return Recipient.from(this, Address.fromSerialized(TextSecurePreferences.getLocalNumber(this)), false);
-    }, this::initializeProfileIcon);
+    SimpleTask.run(getLifecycle(), Recipient::self, this::initializeProfileIcon);
   }
 
   @Override
@@ -129,6 +132,7 @@ public class ConversationListActivity extends PassphraseRequiredActionBarActivit
 
     inflater.inflate(R.menu.text_secure_normal, menu);
 
+    menu.findItem(R.id.menu_insights).setVisible(TextSecurePreferences.isSmsEnabled(this));
     menu.findItem(R.id.menu_clear_passphrase).setVisible(!TextSecurePreferences.isPasswordDisabled(this));
 
     super.onPrepareOptionsMenu(menu);
@@ -181,17 +185,17 @@ public class ConversationListActivity extends PassphraseRequiredActionBarActivit
 
   private void initializeProfileIcon(@NonNull Recipient recipient) {
     ImageView     icon          = findViewById(R.id.toolbar_icon);
-    String        name          = Optional.fromNullable(recipient.getName()).or(Optional.fromNullable(TextSecurePreferences.getProfileName(this))).or("");
+    String        name          = Optional.fromNullable(recipient.getDisplayName(this)).or(Optional.fromNullable(TextSecurePreferences.getProfileName(this))).or("");
     MaterialColor fallbackColor = recipient.getColor();
 
     if (fallbackColor == ContactColors.UNKNOWN_COLOR && !TextUtils.isEmpty(name)) {
       fallbackColor = ContactColors.generateFor(name);
     }
 
-    Drawable fallback = new GeneratedContactPhoto(name, R.drawable.ic_profile_default).asDrawable(this, fallbackColor.toAvatarColor(this));
+    Drawable fallback = new GeneratedContactPhoto(name, R.drawable.ic_profile_outline_40).asDrawable(this, fallbackColor.toAvatarColor(this));
 
     GlideApp.with(this)
-            .load(new ProfileContactPhoto(recipient.getAddress(), String.valueOf(TextSecurePreferences.getProfileAvatarId(this))))
+            .load(new ProfileContactPhoto(recipient.getId(), String.valueOf(TextSecurePreferences.getProfileAvatarId(this))))
             .error(fallback)
             .circleCrop()
             .diskCacheStrategy(DiskCacheStrategy.ALL)
@@ -210,6 +214,7 @@ public class ConversationListActivity extends PassphraseRequiredActionBarActivit
     case R.id.menu_clear_passphrase:  handleClearPassphrase(); return true;
     case R.id.menu_mark_all_read:     handleMarkAllRead();     return true;
     case R.id.menu_invite:            handleInvite();          return true;
+    case R.id.menu_insights:          handleInsights();        return true;
     case R.id.menu_help:              handleHelp();            return true;
     }
 
@@ -225,7 +230,7 @@ public class ConversationListActivity extends PassphraseRequiredActionBarActivit
     searchToolbar.clearFocus();
 
     Intent intent = new Intent(this, ConversationActivity.class);
-    intent.putExtra(ConversationActivity.ADDRESS_EXTRA, recipient.getAddress());
+    intent.putExtra(ConversationActivity.RECIPIENT_EXTRA, recipient.getId());
     intent.putExtra(ConversationActivity.THREAD_ID_EXTRA, threadId);
     intent.putExtra(ConversationActivity.DISTRIBUTION_TYPE_EXTRA, distributionType);
     intent.putExtra(ConversationActivity.TIMING_EXTRA, System.currentTimeMillis());
@@ -233,7 +238,7 @@ public class ConversationListActivity extends PassphraseRequiredActionBarActivit
     intent.putExtra(ConversationActivity.STARTING_POSITION_EXTRA, startingPosition);
 
     startActivity(intent);
-    overridePendingTransition(R.anim.slide_from_right, R.anim.fade_scale_out);
+    overridePendingTransition(R.anim.slide_from_end, R.anim.fade_scale_out);
   }
 
   @Override
@@ -246,6 +251,20 @@ public class ConversationListActivity extends PassphraseRequiredActionBarActivit
   public void onBackPressed() {
     if (searchToolbar.isVisible()) searchToolbar.collapse();
     else                           super.onBackPressed();
+  }
+
+  @Override
+  public void onListScrolledToTop() {
+    if (toolbarShadow.getVisibility() != View.GONE) {
+      ViewUtil.fadeOut(toolbarShadow, 250);
+    }
+  }
+
+  @Override
+  public void onListScrolledAwayFromTop() {
+    if (toolbarShadow.getVisibility() != View.VISIBLE) {
+      ViewUtil.fadeIn(toolbarShadow, 250);
+    }
   }
 
   private void createGroup() {
@@ -282,6 +301,10 @@ public class ConversationListActivity extends PassphraseRequiredActionBarActivit
 
   private void handleInvite() {
     startActivity(new Intent(this, InviteActivity.class));
+  }
+
+  private void handleInsights() {
+    InsightsLauncher.showInsightsDashboard(getSupportFragmentManager());
   }
 
   private void handleHelp() {

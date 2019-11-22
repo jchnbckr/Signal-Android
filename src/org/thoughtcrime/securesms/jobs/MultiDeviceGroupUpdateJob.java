@@ -1,18 +1,19 @@
 package org.thoughtcrime.securesms.jobs;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thoughtcrime.securesms.crypto.UnidentifiedAccessUtil;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.GroupDatabase;
-import org.thoughtcrime.securesms.dependencies.InjectableType;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobmanager.Data;
 import org.thoughtcrime.securesms.jobmanager.Job;
 import org.thoughtcrime.securesms.jobmanager.impl.NetworkConstraint;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.recipients.Recipient;
+import org.thoughtcrime.securesms.recipients.RecipientId;
+import org.thoughtcrime.securesms.recipients.RecipientUtil;
 import org.thoughtcrime.securesms.util.GroupUtil;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.whispersystems.libsignal.util.guava.Optional;
@@ -23,6 +24,7 @@ import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStre
 import org.whispersystems.signalservice.api.messages.multidevice.DeviceGroup;
 import org.whispersystems.signalservice.api.messages.multidevice.DeviceGroupsOutputStream;
 import org.whispersystems.signalservice.api.messages.multidevice.SignalServiceSyncMessage;
+import org.whispersystems.signalservice.api.push.SignalServiceAddress;
 import org.whispersystems.signalservice.api.push.exceptions.PushNetworkException;
 
 import java.io.ByteArrayInputStream;
@@ -34,15 +36,11 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import javax.inject.Inject;
-
-public class MultiDeviceGroupUpdateJob extends BaseJob implements InjectableType {
+public class MultiDeviceGroupUpdateJob extends BaseJob {
 
   public static final String KEY = "MultiDeviceGroupUpdateJob";
 
   private static final String TAG = MultiDeviceGroupUpdateJob.class.getSimpleName();
-
-  @Inject SignalServiceMessageSender messageSender;
 
   public MultiDeviceGroupUpdateJob() {
     this(new Job.Parameters.Builder()
@@ -86,13 +84,14 @@ public class MultiDeviceGroupUpdateJob extends BaseJob implements InjectableType
 
       while ((record = reader.getNext()) != null) {
         if (!record.isMms()) {
-          List<String> members = new LinkedList<>();
+          List<SignalServiceAddress> members = new LinkedList<>();
 
-          for (Address member : record.getMembers()) {
-            members.add(member.serialize());
+          for (RecipientId member : record.getMembers()) {
+            members.add(RecipientUtil.toSignalServiceAddress(context, Recipient.resolved(member)));
           }
 
-          Recipient         recipient       = Recipient.from(context, Address.fromSerialized(GroupUtil.getEncodedId(record.getId(), record.isMms())), false);
+          RecipientId       recipientId     = DatabaseFactory.getRecipientDatabase(context).getOrInsertFromGroupId(GroupUtil.getEncodedId(record.getId(), record.isMms()));
+          Recipient         recipient       = Recipient.resolved(recipientId);
           Optional<Integer> expirationTimer = recipient.getExpireMessages() > 0 ? Optional.of(recipient.getExpireMessages()) : Optional.absent();
 
           out.write(new DeviceGroup(record.getId(), Optional.fromNullable(record.getTitle()),
@@ -106,7 +105,7 @@ public class MultiDeviceGroupUpdateJob extends BaseJob implements InjectableType
       out.close();
 
       if (contactDataFile.exists() && contactDataFile.length() > 0) {
-        sendUpdate(messageSender, contactDataFile);
+        sendUpdate(ApplicationDependencies.getSignalServiceMessageSender(), contactDataFile);
       } else {
         Log.w(TAG, "No groups present for sync message...");
       }

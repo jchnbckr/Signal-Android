@@ -4,17 +4,16 @@ package org.thoughtcrime.securesms.database.loaders;
 import android.content.Context;
 import android.database.ContentObserver;
 import android.database.Cursor;
-import android.support.annotation.NonNull;
-import android.support.v4.content.AsyncTaskLoader;
+import androidx.annotation.NonNull;
+import androidx.loader.content.AsyncTaskLoader;
 
 import com.annimon.stream.Stream;
 
 import org.thoughtcrime.securesms.R;
-import org.thoughtcrime.securesms.database.Address;
-import org.thoughtcrime.securesms.database.Database;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.MediaDatabase;
 import org.thoughtcrime.securesms.recipients.Recipient;
+import org.thoughtcrime.securesms.recipients.RecipientId;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -32,13 +31,13 @@ public class BucketedThreadMediaLoader extends AsyncTaskLoader<BucketedThreadMed
   @SuppressWarnings("unused")
   private static final String TAG = BucketedThreadMediaLoader.class.getSimpleName();
 
-  private final Address         address;
+  private final RecipientId recipientId;
   private final ContentObserver observer;
 
-  public BucketedThreadMediaLoader(@NonNull Context context, @NonNull Address address) {
+  public BucketedThreadMediaLoader(@NonNull Context context, @NonNull RecipientId recipientId) {
     super(context);
-    this.address  = address;
-    this.observer = new ForceLoadContentObserver();
+    this.recipientId = recipientId;
+    this.observer    = new ForceLoadContentObserver();
 
     onContentChanged();
   }
@@ -63,7 +62,7 @@ public class BucketedThreadMediaLoader extends AsyncTaskLoader<BucketedThreadMed
   @Override
   public BucketedThreadMedia loadInBackground() {
     BucketedThreadMedia result   = new BucketedThreadMedia(getContext());
-    long                threadId = DatabaseFactory.getThreadDatabase(getContext()).getThreadIdFor(Recipient.from(getContext(), address, true));
+    long                threadId = DatabaseFactory.getThreadDatabase(getContext()).getThreadIdFor(Recipient.resolved(recipientId));
 
     DatabaseFactory.getMediaDatabase(getContext()).subscribeToMediaChanges(observer);
     try (Cursor cursor = DatabaseFactory.getMediaDatabase(getContext()).getGalleryMediaForThread(threadId)) {

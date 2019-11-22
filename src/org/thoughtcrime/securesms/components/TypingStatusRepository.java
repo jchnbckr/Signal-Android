@@ -1,10 +1,10 @@
 package org.thoughtcrime.securesms.components;
 
 import android.annotation.SuppressLint;
-import android.arch.lifecycle.LiveData;
-import android.arch.lifecycle.MutableLiveData;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
 import android.content.Context;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 import com.annimon.stream.Collectors;
 import com.annimon.stream.Stream;
@@ -43,7 +43,7 @@ public class TypingStatusRepository {
   }
 
   public synchronized void onTypingStarted(@NonNull Context context, long threadId, @NonNull Recipient author, int device) {
-    if (author.getAddress().serialize().equals(TextSecurePreferences.getLocalNumber(context))) {
+    if (author.isLocalNumber()) {
       return;
     }
 
@@ -67,7 +67,7 @@ public class TypingStatusRepository {
   }
 
   public synchronized void onTypingStopped(@NonNull Context context, long threadId, @NonNull Recipient author, int device, boolean isReplacedByIncomingMessage) {
-    if (author.getAddress().serialize().equals(TextSecurePreferences.getLocalNumber(context))) {
+    if (author.isLocalNumber()) {
       return;
     }
 

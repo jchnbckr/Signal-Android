@@ -37,7 +37,7 @@
                       android:layout_height="wrap_content"
                       android:layout_gravity="bottom|center_horizontal"
                       android:layout_marginBottom="35dp"
-                      android:textColor="@color/gray50"
+                      android:textColor="@color/core_grey_50"
                       android:textSize="11sp"
                       android:visibility="invisible"
                       android:text="@string/verify_display_fragment__tap_to_scan"/>
@@ -161,7 +161,7 @@
                       android:layout_marginTop="10dp"
                       android:paddingStart="20dp">
 
-            <android.support.v7.widget.SwitchCompat
+            <androidx.appcompat.widget.SwitchCompat
                     android:id="@+id/verified_switch"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"/>

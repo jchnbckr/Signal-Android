@@ -1,9 +1,9 @@
 package org.thoughtcrime.securesms.jobs;
 
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 import org.thoughtcrime.securesms.crypto.ProfileKeyUtil;
-import org.thoughtcrime.securesms.dependencies.InjectableType;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobmanager.Data;
 import org.thoughtcrime.securesms.jobmanager.Job;
 import org.thoughtcrime.securesms.jobmanager.impl.NetworkConstraint;
@@ -21,15 +21,11 @@ import org.whispersystems.signalservice.api.push.exceptions.PushNetworkException
 
 import java.io.IOException;
 
-import javax.inject.Inject;
-
-public class RefreshUnidentifiedDeliveryAbilityJob extends BaseJob implements InjectableType {
+public class RefreshUnidentifiedDeliveryAbilityJob extends BaseJob {
 
   public static final String KEY = "RefreshUnidentifiedDeliveryAbilityJob";
 
   private static final String TAG = RefreshUnidentifiedDeliveryAbilityJob.class.getSimpleName();
-
-  @Inject SignalServiceMessageReceiver receiver;
 
   public RefreshUnidentifiedDeliveryAbilityJob() {
     this(new Job.Parameters.Builder()
@@ -55,7 +51,8 @@ public class RefreshUnidentifiedDeliveryAbilityJob extends BaseJob implements In
   @Override
   public void onRun() throws Exception {
     byte[]               profileKey = ProfileKeyUtil.getProfileKey(context);
-    SignalServiceProfile profile    = retrieveProfile(TextSecurePreferences.getLocalNumber(context));
+    SignalServiceAddress address    = new SignalServiceAddress(Optional.of(TextSecurePreferences.getLocalUuid(context)), Optional.of(TextSecurePreferences.getLocalNumber(context)));
+    SignalServiceProfile profile    = retrieveProfile(address);
 
     boolean enabled = profile.getUnidentifiedAccess() != null && isValidVerifier(profileKey, profile.getUnidentifiedAccess());
 
@@ -72,18 +69,19 @@ public class RefreshUnidentifiedDeliveryAbilityJob extends BaseJob implements In
     return exception instanceof PushNetworkException;
   }
 
-  private SignalServiceProfile retrieveProfile(@NonNull String number) throws IOException {
-    SignalServiceMessagePipe pipe = IncomingMessageObserver.getPipe();
+  private SignalServiceProfile retrieveProfile(@NonNull SignalServiceAddress address) throws IOException {
+    SignalServiceMessageReceiver receiver = ApplicationDependencies.getSignalServiceMessageReceiver();
+    SignalServiceMessagePipe     pipe     = IncomingMessageObserver.getPipe();
 
     if (pipe != null) {
       try {
-        return pipe.getProfile(new SignalServiceAddress(number), Optional.absent());
+        return pipe.getProfile(address, Optional.absent());
       } catch (IOException e) {
         Log.w(TAG, e);
       }
     }
 
-    return receiver.retrieveProfile(new SignalServiceAddress(number), Optional.absent());
+    return receiver.retrieveProfile(address, Optional.absent());
   }
 
   private boolean isValidVerifier(@NonNull byte[] profileKey, @NonNull String verifier) {

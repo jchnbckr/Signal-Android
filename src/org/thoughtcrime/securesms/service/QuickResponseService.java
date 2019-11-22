@@ -7,7 +7,6 @@ import android.text.TextUtils;
 import android.widget.Toast;
 
 import org.thoughtcrime.securesms.R;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.recipients.Recipient;
 import org.thoughtcrime.securesms.sms.MessageSender;
@@ -47,8 +46,7 @@ public class QuickResponseService extends IntentService {
         number = URLDecoder.decode(number);
       }
 
-      Address   address        = Address.fromExternal(this, number);
-      Recipient recipient      = Recipient.from(this, address, false);
+      Recipient recipient      = Recipient.external(this, number);
       int       subscriptionId = recipient.getDefaultSubscriptionId().or(-1);
       long      expiresIn      = recipient.getExpireMessages() * 1000L;
 

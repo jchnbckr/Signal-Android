@@ -5,9 +5,9 @@ import android.content.Context;
 import android.database.Cursor;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.WorkerThread;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.WorkerThread;
 import android.text.TextUtils;
 
 import org.thoughtcrime.securesms.attachments.AttachmentId;
@@ -109,7 +109,7 @@ public class AttachmentUtil {
     try (Cursor messageCursor = DatabaseFactory.getMmsDatabase(context).getMessage(attachment.getMmsId())) {
       final MessageRecord message = DatabaseFactory.getMmsDatabase(context).readerFor(messageCursor).getNext();
 
-      if (message == null || (!message.getRecipient().isSystemContact() && !message.isOutgoing() && !Util.isOwnNumber(context, message.getRecipient().getAddress()))) {
+      if (message == null || (!message.getRecipient().isSystemContact() && !message.isOutgoing() && !message.getRecipient().isLocalNumber())) {
         return true;
       }
     }

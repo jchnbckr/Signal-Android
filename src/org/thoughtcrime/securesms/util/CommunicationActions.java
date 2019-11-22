@@ -7,16 +7,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.AsyncTask;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v4.app.TaskStackBuilder;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.app.TaskStackBuilder;
 import android.text.TextUtils;
 import android.widget.Toast;
 
 import org.thoughtcrime.securesms.conversation.ConversationActivity;
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.WebRtcCallActivity;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.permissions.Permissions;
 import org.thoughtcrime.securesms.recipients.Recipient;
@@ -36,14 +35,14 @@ public class CommunicationActions {
     Permissions.with(activity)
         .request(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
         .ifNecessary()
-        .withRationaleDialog(activity.getString(R.string.ConversationActivity_to_call_s_signal_needs_access_to_your_microphone_and_camera, recipient.toShortString()),
-                             R.drawable.ic_mic_white_48dp,
+        .withRationaleDialog(activity.getString(R.string.ConversationActivity_to_call_s_signal_needs_access_to_your_microphone_and_camera, recipient.toShortString(activity)),
+                             R.drawable.ic_mic_solid_24,
                              R.drawable.ic_videocam_white_48dp)
-        .withPermanentDenialDialog(activity.getString(R.string.ConversationActivity_signal_needs_the_microphone_and_camera_permissions_in_order_to_call_s, recipient.toShortString()))
+        .withPermanentDenialDialog(activity.getString(R.string.ConversationActivity_signal_needs_the_microphone_and_camera_permissions_in_order_to_call_s, recipient.toShortString(activity)))
         .onAllGranted(() -> {
           Intent intent = new Intent(activity, WebRtcCallService.class);
           intent.setAction(WebRtcCallService.ACTION_OUTGOING_CALL);
-          intent.putExtra(WebRtcCallService.EXTRA_REMOTE_ADDRESS, recipient.getAddress());
+          intent.putExtra(WebRtcCallService.EXTRA_REMOTE_RECIPIENT, recipient.getId());
           activity.startService(intent);
 
           Intent activityIntent = new Intent(activity, WebRtcCallActivity.class);
@@ -71,7 +70,7 @@ public class CommunicationActions {
       @Override
       protected void onPostExecute(Long threadId) {
         Intent intent = new Intent(context, ConversationActivity.class);
-        intent.putExtra(ConversationActivity.ADDRESS_EXTRA, recipient.getAddress());
+        intent.putExtra(ConversationActivity.RECIPIENT_EXTRA, recipient.getId());
         intent.putExtra(ConversationActivity.THREAD_ID_EXTRA, threadId);
         intent.putExtra(ConversationActivity.TIMING_EXTRA, System.currentTimeMillis());
 
@@ -89,8 +88,8 @@ public class CommunicationActions {
     }.execute();
   }
 
-  public static void composeSmsThroughDefaultApp(@NonNull Context context, @NonNull Address address, @Nullable String text) {
-    Intent intent = new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + address.serialize()));
+  public static void composeSmsThroughDefaultApp(@NonNull Context context, @NonNull Recipient recipient, @Nullable String text) {
+    Intent intent = new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + recipient.requireSmsAddress()));
     if (text != null) {
       intent.putExtra("sms_body", text);
     }

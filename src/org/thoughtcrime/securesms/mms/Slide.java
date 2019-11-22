@@ -19,12 +19,13 @@ package org.thoughtcrime.securesms.mms;
 import android.content.Context;
 import android.content.res.Resources.Theme;
 import android.net.Uri;
-import android.support.annotation.DrawableRes;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.DrawableRes;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thoughtcrime.securesms.attachments.Attachment;
 import org.thoughtcrime.securesms.attachments.UriAttachment;
+import org.thoughtcrime.securesms.blurhash.BlurHash;
 import org.thoughtcrime.securesms.database.AttachmentDatabase;
 import org.thoughtcrime.securesms.stickers.StickerLocator;
 import org.thoughtcrime.securesms.util.MediaUtil;
@@ -105,7 +106,7 @@ public abstract class Slide {
 
   public @NonNull String getContentDescription() { return ""; }
 
-  public Attachment asAttachment() {
+  public @NonNull Attachment asAttachment() {
     return attachment;
   }
 
@@ -126,6 +127,10 @@ public abstract class Slide {
     throw new AssertionError("getPlaceholderRes() called for non-drawable slide");
   }
 
+  public @Nullable BlurHash getPlaceholderBlur() {
+    return attachment.getBlurHash();
+  }
+
   public boolean hasPlaceholder() {
     return false;
   }
@@ -144,6 +149,7 @@ public abstract class Slide {
                                                          @Nullable String         fileName,
                                                          @Nullable String         caption,
                                                          @Nullable StickerLocator stickerLocator,
+                                                         @Nullable BlurHash       blurHash,
                                                                    boolean        voiceNote,
                                                                    boolean        quote)
   {
@@ -161,7 +167,9 @@ public abstract class Slide {
                              voiceNote,
                              quote,
                              caption,
-                             stickerLocator);
+                             stickerLocator,
+                             blurHash,
+                             null);
   }
 
   @Override

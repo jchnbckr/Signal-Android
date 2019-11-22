@@ -1,6 +1,6 @@
 package org.thoughtcrime.securesms.jobmanager.persistence;
 
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 import java.util.List;
 import java.util.Objects;
@@ -15,7 +15,7 @@ public final class FullSpec {
                   @NonNull List<ConstraintSpec> constraintSpecs,
                   @NonNull List<DependencySpec> dependencySpecs)
   {
-    this.jobSpec = jobSpec;
+    this.jobSpec         = jobSpec;
     this.constraintSpecs = constraintSpecs;
     this.dependencySpecs = dependencySpecs;
   }

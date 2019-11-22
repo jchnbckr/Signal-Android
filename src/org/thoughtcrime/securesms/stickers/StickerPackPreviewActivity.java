@@ -1,15 +1,15 @@
 package org.thoughtcrime.securesms.stickers;
 
-import android.arch.lifecycle.ViewModelProviders;
+import androidx.lifecycle.ViewModelProviders;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Point;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.v7.widget.GridLayoutManager;
-import android.support.v7.widget.RecyclerView;
-import android.support.v7.widget.Toolbar;
+import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.appcompat.widget.Toolbar;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -21,6 +21,7 @@ import org.thoughtcrime.securesms.ApplicationContext;
 import org.thoughtcrime.securesms.PassphraseRequiredActionBarActivity;
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.ShareActivity;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobs.StickerPackDownloadJob;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.mms.DecryptableStreamUriLoader;
@@ -28,6 +29,7 @@ import org.thoughtcrime.securesms.mms.GlideApp;
 import org.thoughtcrime.securesms.stickers.StickerManifest.Sticker;
 import org.thoughtcrime.securesms.util.DynamicNoActionBarTheme;
 import org.thoughtcrime.securesms.util.DynamicTheme;
+import org.thoughtcrime.securesms.util.FeatureFlags;
 import org.thoughtcrime.securesms.util.ThemeUtil;
 import org.thoughtcrime.securesms.util.concurrent.SimpleTask;
 import org.whispersystems.libsignal.util.Pair;
@@ -147,8 +149,7 @@ public final class StickerPackPreviewActivity extends PassphraseRequiredActionBa
       if (manifest.isPresent()) {
         presentManifest(manifest.get().getManifest());
         presentButton(manifest.get().isInstalled());
-        // TODO [Stickers]: Re-enable later
-//        presentShareButton(manifest.get().isInstalled(), manifest.get().getManifest().getPackId(), manifest.get().getManifest().getPackKey());
+        presentShareButton(manifest.get().isInstalled(), manifest.get().getManifest().getPackId(), manifest.get().getManifest().getPackKey());
       } else {
         presentError();
       }
@@ -162,9 +163,7 @@ public final class StickerPackPreviewActivity extends PassphraseRequiredActionBa
 
     installButton.setOnClickListener(v -> {
       SimpleTask.run(() -> {
-        ApplicationContext.getInstance(this)
-                          .getJobManager()
-                          .add(new StickerPackDownloadJob(manifest.getPackId(), manifest.getPackKey(), false));
+        ApplicationDependencies.getJobManager().add(new StickerPackDownloadJob(manifest.getPackId(), manifest.getPackKey(), false));
 
         return null;
       }, (nothing) -> finish());
@@ -226,9 +225,10 @@ public final class StickerPackPreviewActivity extends PassphraseRequiredActionBa
     finish();
   }
 
-  private void onScreenWidthChanged(int newWidth) {
+  private void onScreenWidthChanged(int screenWidth) {
     if (layoutManager != null) {
-      layoutManager.setSpanCount(newWidth / getResources().getDimensionPixelOffset(R.dimen.sticker_preview_sticker_size));
+      int availableWidth = screenWidth - (2 * getResources().getDimensionPixelOffset(R.dimen.sticker_preview_gutter_size));
+      layoutManager.setSpanCount(availableWidth / getResources().getDimensionPixelOffset(R.dimen.sticker_preview_sticker_size));
     }
   }
 

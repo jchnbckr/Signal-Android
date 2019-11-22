@@ -1,24 +1,18 @@
 package org.thoughtcrime.securesms.components.registration;
 
-
 import android.content.Context;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
-import android.os.Build;
-import android.support.annotation.Nullable;
-import android.support.annotation.RequiresApi;
 import android.util.AttributeSet;
-import android.view.View;
-import android.widget.Button;
-import android.widget.ImageView;
-import android.widget.RelativeLayout;
-import android.widget.TextView;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thoughtcrime.securesms.R;
 
-public class CallMeCountDownView extends android.support.v7.widget.AppCompatButton {
+public class CallMeCountDownView extends androidx.appcompat.widget.AppCompatButton {
 
   private int countDown;
+  @Nullable
+  private Listener listener;
 
   public CallMeCountDownView(Context context) {
     super(context);
@@ -51,12 +45,25 @@ public class CallMeCountDownView extends android.support.v7.widget.AppCompatButt
       countDown--;
 
       int minutesRemaining = countDown / 60;
-      int secondsRemaining = countDown - (minutesRemaining * 60);
+      int secondsRemaining = countDown % 60;
 
       setText(getResources().getString(R.string.RegistrationActivity_call_me_instead_available_in, minutesRemaining, secondsRemaining));
+
+      if (listener != null) {
+        listener.onRemaining(this, countDown);
+      }
+
       postDelayed(this::updateCountDown, 1000);
     } else if (countDown == 0) {
       setCallEnabled();
     }
+  }
+
+  public void setListener(@Nullable Listener listener) {
+    this.listener = listener;
+  }
+
+  public interface Listener {
+    void onRemaining(@NonNull CallMeCountDownView view, int remaining);
   }
 }

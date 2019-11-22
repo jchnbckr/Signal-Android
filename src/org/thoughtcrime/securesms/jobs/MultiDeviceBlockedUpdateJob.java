@@ -1,23 +1,25 @@
 package org.thoughtcrime.securesms.jobs;
 
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 import org.thoughtcrime.securesms.crypto.UnidentifiedAccessUtil;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.RecipientDatabase;
 import org.thoughtcrime.securesms.database.RecipientDatabase.RecipientReader;
-import org.thoughtcrime.securesms.dependencies.InjectableType;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobmanager.Data;
 import org.thoughtcrime.securesms.jobmanager.Job;
 import org.thoughtcrime.securesms.jobmanager.impl.NetworkConstraint;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.recipients.Recipient;
+import org.thoughtcrime.securesms.recipients.RecipientUtil;
 import org.thoughtcrime.securesms.util.GroupUtil;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.whispersystems.signalservice.api.SignalServiceMessageSender;
 import org.whispersystems.signalservice.api.crypto.UntrustedIdentityException;
 import org.whispersystems.signalservice.api.messages.multidevice.BlockedListMessage;
 import org.whispersystems.signalservice.api.messages.multidevice.SignalServiceSyncMessage;
+import org.whispersystems.signalservice.api.push.SignalServiceAddress;
 import org.whispersystems.signalservice.api.push.exceptions.PushNetworkException;
 
 import java.io.IOException;
@@ -25,16 +27,12 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import javax.inject.Inject;
-
-public class MultiDeviceBlockedUpdateJob extends BaseJob implements InjectableType {
+public class MultiDeviceBlockedUpdateJob extends BaseJob {
 
   public static final String KEY = "MultiDeviceBlockedUpdateJob";
 
   @SuppressWarnings("unused")
   private static final String TAG = MultiDeviceBlockedUpdateJob.class.getSimpleName();
-
-  @Inject SignalServiceMessageSender messageSender;
 
   public MultiDeviceBlockedUpdateJob() {
     this(new Job.Parameters.Builder()
@@ -71,19 +69,20 @@ public class MultiDeviceBlockedUpdateJob extends BaseJob implements InjectableTy
     RecipientDatabase database = DatabaseFactory.getRecipientDatabase(context);
 
     try (RecipientReader reader = database.readerForBlocked(database.getBlocked())) {
-      List<String> blockedIndividuals = new LinkedList<>();
-      List<byte[]> blockedGroups      = new LinkedList<>();
+      List<SignalServiceAddress> blockedIndividuals = new LinkedList<>();
+      List<byte[]>               blockedGroups      = new LinkedList<>();
 
       Recipient recipient;
 
       while ((recipient = reader.getNext()) != null) {
-        if (recipient.isGroupRecipient()) {
-          blockedGroups.add(GroupUtil.getDecodedId(recipient.getAddress().toGroupString()));
+        if (recipient.isGroup()) {
+          blockedGroups.add(GroupUtil.getDecodedId(recipient.requireGroupId()));
         } else {
-          blockedIndividuals.add(recipient.getAddress().serialize());
+          blockedIndividuals.add(RecipientUtil.toSignalServiceAddress(context, recipient));
         }
       }
 
+      SignalServiceMessageSender messageSender = ApplicationDependencies.getSignalServiceMessageSender();
       messageSender.sendMessage(SignalServiceSyncMessage.forBlocked(new BlockedListMessage(blockedIndividuals, blockedGroups)),
                                 UnidentifiedAccessUtil.getAccessForSync(context));
     }

@@ -24,10 +24,12 @@ import android.view.MenuItem;
 import android.view.View;
 
 import org.thoughtcrime.securesms.conversation.ConversationActivity;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.ThreadDatabase;
+import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.recipients.Recipient;
+import org.thoughtcrime.securesms.recipients.RecipientId;
+import org.whispersystems.libsignal.util.guava.Optional;
 
 /**
  * Activity container for starting a new conversation.
@@ -35,7 +37,9 @@ import org.thoughtcrime.securesms.recipients.Recipient;
  * @author Moxie Marlinspike
  *
  */
-public class NewConversationActivity extends ContactSelectionActivity {
+public class NewConversationActivity extends ContactSelectionActivity
+                                    implements ContactSelectionListFragment.InviteCallback
+{
 
   @SuppressWarnings("unused")
   private static final String TAG = NewConversationActivity.class.getSimpleName();
@@ -48,11 +52,17 @@ public class NewConversationActivity extends ContactSelectionActivity {
   }
 
   @Override
-  public void onContactSelected(String number) {
-    Recipient recipient = Recipient.from(this, Address.fromExternal(this, number), true);
+  public void onContactSelected(Optional<RecipientId> recipientId, String number) {
+    Recipient recipient;
+    if (recipientId.isPresent()) {
+      recipient = Recipient.resolved(recipientId.get());
+    } else {
+      Log.i(TAG, "[onContactSelected] Maybe creating a new recipient.");
+      recipient = Recipient.external(this, number);
+    }
 
     Intent intent = new Intent(this, ConversationActivity.class);
-    intent.putExtra(ConversationActivity.ADDRESS_EXTRA, recipient.getAddress());
+    intent.putExtra(ConversationActivity.RECIPIENT_EXTRA, recipient.getId());
     intent.putExtra(ConversationActivity.TEXT_EXTRA, getIntent().getStringExtra(ConversationActivity.TEXT_EXTRA));
     intent.setDataAndType(getIntent().getData(), getIntent().getType());
 
@@ -98,5 +108,10 @@ public class NewConversationActivity extends ContactSelectionActivity {
     inflater.inflate(R.menu.new_conversation_activity, menu);
     super.onPrepareOptionsMenu(menu);
     return true;
+  }
+
+  @Override
+  public void onInvite() {
+    handleInvite();
   }
 }

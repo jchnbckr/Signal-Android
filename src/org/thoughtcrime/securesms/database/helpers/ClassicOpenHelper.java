@@ -10,7 +10,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.net.Uri;
 import android.provider.ContactsContract;
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 import android.text.TextUtils;
 import org.thoughtcrime.securesms.logging.Log;
 
@@ -20,13 +20,11 @@ import com.google.i18n.phonenumbers.PhoneNumberUtil;
 import com.google.i18n.phonenumbers.Phonenumber;
 import com.google.i18n.phonenumbers.ShortNumberInfo;
 
-import org.thoughtcrime.securesms.DatabaseUpgradeActivity;
 import org.thoughtcrime.securesms.crypto.AttachmentSecret;
 import org.thoughtcrime.securesms.crypto.ClassicDecryptingPartInputStream;
 import org.thoughtcrime.securesms.crypto.MasterCipher;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
 import org.thoughtcrime.securesms.crypto.MasterSecretUtil;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.AttachmentDatabase;
 import org.thoughtcrime.securesms.database.DraftDatabase;
 import org.thoughtcrime.securesms.database.GroupDatabase;
@@ -37,10 +35,13 @@ import org.thoughtcrime.securesms.database.PushDatabase;
 import org.thoughtcrime.securesms.database.RecipientDatabase;
 import org.thoughtcrime.securesms.database.SmsDatabase;
 import org.thoughtcrime.securesms.database.ThreadDatabase;
+import org.thoughtcrime.securesms.migrations.LegacyMigrationJob;
 import org.thoughtcrime.securesms.notifications.MessageNotifier;
 import org.thoughtcrime.securesms.permissions.Permissions;
+import org.thoughtcrime.securesms.phonenumbers.NumberUtil;
 import org.thoughtcrime.securesms.util.Base64;
 import org.thoughtcrime.securesms.util.DelimiterUtil;
+import org.thoughtcrime.securesms.util.GroupUtil;
 import org.thoughtcrime.securesms.util.Hex;
 import org.thoughtcrime.securesms.util.JsonUtils;
 import org.thoughtcrime.securesms.util.MediaUtil;
@@ -146,12 +147,12 @@ public class ClassicOpenHelper extends SQLiteOpenHelper {
   }
 
   public void onApplicationLevelUpgrade(Context context, MasterSecret masterSecret, int fromVersion,
-                                        DatabaseUpgradeActivity.DatabaseUpgradeListener listener)
+                                        LegacyMigrationJob.DatabaseUpgradeListener listener)
   {
     SQLiteDatabase db = getWritableDatabase();
     db.beginTransaction();
 
-    if (fromVersion < DatabaseUpgradeActivity.NO_MORE_KEY_EXCHANGE_PREFIX_VERSION) {
+    if (fromVersion < LegacyMigrationJob.NO_MORE_KEY_EXCHANGE_PREFIX_VERSION) {
       String KEY_EXCHANGE             = "?TextSecureKeyExchange";
       String PROCESSED_KEY_EXCHANGE   = "?TextSecureKeyExchangd";
       String STALE_KEY_EXCHANGE       = "?TextSecureKeyExchangs";
@@ -293,7 +294,7 @@ public class ClassicOpenHelper extends SQLiteOpenHelper {
         threadCursor.close();
     }
 
-    if (fromVersion < DatabaseUpgradeActivity.MMS_BODY_VERSION) {
+    if (fromVersion < LegacyMigrationJob.MMS_BODY_VERSION) {
       Log.i("DatabaseFactory", "Update MMS bodies...");
       MasterCipher masterCipher = new MasterCipher(masterSecret);
       Cursor mmsCursor          = db.query("mms", new String[] {"_id"},
@@ -357,7 +358,7 @@ public class ClassicOpenHelper extends SQLiteOpenHelper {
       }
     }
 
-    if (fromVersion < DatabaseUpgradeActivity.TOFU_IDENTITIES_VERSION) {
+    if (fromVersion < LegacyMigrationJob.TOFU_IDENTITIES_VERSION) {
       File sessionDirectory = new File(context.getFilesDir() + File.separator + "sessions");
 
       if (sessionDirectory.exists() && sessionDirectory.isDirectory()) {
@@ -393,7 +394,7 @@ public class ClassicOpenHelper extends SQLiteOpenHelper {
       }
     }
 
-    if (fromVersion < DatabaseUpgradeActivity.ASYMMETRIC_MASTER_SECRET_FIX_VERSION) {
+    if (fromVersion < LegacyMigrationJob.ASYMMETRIC_MASTER_SECRET_FIX_VERSION) {
       if (!MasterSecretUtil.hasAsymmericMasterSecret(context)) {
         MasterSecretUtil.generateAsymmetricMasterSecret(context, masterSecret);
 
@@ -1269,10 +1270,10 @@ public class ClassicOpenHelper extends SQLiteOpenHelper {
       if (Permissions.hasAny(context, Manifest.permission.READ_CONTACTS, Manifest.permission.WRITE_CONTACTS)) {
         try (Cursor cursor = db.query("recipient_preferences", null, null, null, null, null, null)) {
           while (cursor != null && cursor.moveToNext()) {
-            Address address = Address.fromSerialized(cursor.getString(cursor.getColumnIndexOrThrow("recipient_ids")));
+            String address = cursor.getString(cursor.getColumnIndexOrThrow("recipient_ids"));
 
-            if (address.isPhone() && !TextUtils.isEmpty(address.toPhoneString())) {
-              Uri lookup = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(address.toPhoneString()));
+            if (!TextUtils.isEmpty(address) && !GroupUtil.isEncodedGroup(address) && !NumberUtil.isValidEmail(address)) {
+              Uri lookup = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(address));
 
               try (Cursor contactCursor = context.getContentResolver().query(lookup, new String[] {ContactsContract.PhoneLookup.DISPLAY_NAME,
                                                                                                    ContactsContract.PhoneLookup.LOOKUP_KEY,
@@ -1288,7 +1289,7 @@ public class ClassicOpenHelper extends SQLiteOpenHelper {
                   contentValues.put("system_phone_label", contactCursor.getString(4));
                   contentValues.put("system_contact_uri", ContactsContract.Contacts.getLookupUri(contactCursor.getLong(2), contactCursor.getString(1)).toString());
 
-                  db.update("recipient_preferences", contentValues, "recipient_ids = ?", new String[] {address.toPhoneString()});
+                  db.update("recipient_preferences", contentValues, "recipient_ids = ?", new String[] {address});
                 }
               }
             }

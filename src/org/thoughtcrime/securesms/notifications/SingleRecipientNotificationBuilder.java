@@ -7,12 +7,13 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.StringRes;
-import android.support.v4.app.NotificationCompat;
-import android.support.v4.app.NotificationCompat.Action;
-import android.support.v4.app.RemoteInput;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
+import androidx.appcompat.view.ContextThemeWrapper;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationCompat.Action;
+import androidx.core.app.RemoteInput;
 import android.text.SpannableStringBuilder;
 
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
@@ -49,7 +50,7 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
 
   public SingleRecipientNotificationBuilder(@NonNull Context context, @NonNull NotificationPrivacyPreference privacy)
   {
-    super(context, privacy);
+    super(new ContextThemeWrapper(context, R.style.TextSecure_LightTheme), privacy);
 
     setSmallIcon(R.drawable.icon_notification);
     setColor(context.getResources().getColor(R.color.textsecure_primary));
@@ -65,7 +66,7 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
     setChannelId(channelId != null ? channelId : NotificationChannels.getMessagesChannel(context));
 
     if (privacy.isDisplayContact()) {
-      setContentTitle(recipient.toShortString());
+      setContentTitle(recipient.toShortString(context));
 
       if (recipient.getContactUri() != null) {
         addPerson(recipient.getContactUri().toString());
@@ -93,7 +94,7 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
 
     } else {
       setContentTitle(context.getString(R.string.SingleRecipientNotificationBuilder_signal));
-      setLargeIcon(new GeneratedContactPhoto("Unknown", R.drawable.ic_profile_default).asDrawable(context, ContactColors.UNKNOWN_COLOR.toConversationColor(context)));
+      setLargeIcon(new GeneratedContactPhoto("Unknown", R.drawable.ic_profile_outline_40).asDrawable(context, ContactColors.UNKNOWN_COLOR.toConversationColor(context)));
     }
   }
 
@@ -109,8 +110,8 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
   {
     SpannableStringBuilder stringBuilder = new SpannableStringBuilder();
 
-    if (privacy.isDisplayContact() && threadRecipients.isGroupRecipient()) {
-      stringBuilder.append(Util.getBoldedString(individualRecipient.toShortString() + ": "));
+    if (privacy.isDisplayContact() && threadRecipients.isGroup()) {
+      stringBuilder.append(Util.getBoldedString(individualRecipient.toShortString(context) + ": "));
     }
 
     if (privacy.isDisplayMessage()) {
@@ -201,8 +202,8 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
   {
     SpannableStringBuilder stringBuilder = new SpannableStringBuilder();
 
-    if (privacy.isDisplayContact() && threadRecipient.isGroupRecipient()) {
-      stringBuilder.append(Util.getBoldedString(individualRecipient.toShortString() + ": "));
+    if (privacy.isDisplayContact() && threadRecipient.isGroup()) {
+      stringBuilder.append(Util.getBoldedString(individualRecipient.toShortString(context) + ": "));
     }
 
     if (privacy.isDisplayMessage()) {

@@ -17,27 +17,34 @@
 package org.thoughtcrime.securesms;
 
 import android.annotation.SuppressLint;
-import android.arch.lifecycle.DefaultLifecycleObserver;
-import android.arch.lifecycle.LifecycleOwner;
-import android.arch.lifecycle.ProcessLifecycleOwner;
+
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.camera.camera2.Camera2AppConfig;
+import androidx.camera.core.CameraX;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.ProcessLifecycleOwner;
 import android.content.Context;
 import android.os.AsyncTask;
 import android.os.Build;
-import android.support.annotation.NonNull;
-import android.support.multidex.MultiDexApplication;
+import androidx.annotation.NonNull;
+import androidx.multidex.MultiDexApplication;
 
 import com.google.android.gms.security.ProviderInstaller;
 
 import org.conscrypt.Conscrypt;
 import org.signal.aesgcmprovider.AesGcmProvider;
+import org.signal.ringrtc.CallConnectionFactory;
 import org.thoughtcrime.securesms.components.TypingStatusRepository;
 import org.thoughtcrime.securesms.components.TypingStatusSender;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
-import org.thoughtcrime.securesms.dependencies.AxolotlStorageModule;
-import org.thoughtcrime.securesms.dependencies.InjectableType;
-import org.thoughtcrime.securesms.dependencies.SignalCommunicationModule;
-import org.thoughtcrime.securesms.jobmanager.DependencyInjector;
+import org.thoughtcrime.securesms.database.helpers.SQLCipherOpenHelper;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencyProvider;
+import org.thoughtcrime.securesms.gcm.FcmJobService;
+import org.thoughtcrime.securesms.insights.InsightsOptOut;
 import org.thoughtcrime.securesms.jobmanager.JobManager;
+import org.thoughtcrime.securesms.jobmanager.JobMigrator;
 import org.thoughtcrime.securesms.jobmanager.impl.JsonDataSerializer;
 import org.thoughtcrime.securesms.jobs.CreateSignedPreKeyJob;
 import org.thoughtcrime.securesms.jobs.FastJobStorage;
@@ -51,22 +58,26 @@ import org.thoughtcrime.securesms.logging.CustomSignalProtocolLogger;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.logging.PersistentLogger;
 import org.thoughtcrime.securesms.logging.UncaughtExceptionLogger;
+import org.thoughtcrime.securesms.mediasend.LegacyCameraModels;
+import org.thoughtcrime.securesms.mediasend.camerax.CameraXUtil;
+import org.thoughtcrime.securesms.migrations.ApplicationMigrations;
 import org.thoughtcrime.securesms.notifications.MessageNotifier;
 import org.thoughtcrime.securesms.notifications.NotificationChannels;
 import org.thoughtcrime.securesms.providers.BlobProvider;
 import org.thoughtcrime.securesms.push.SignalServiceNetworkAccess;
+import org.thoughtcrime.securesms.ringrtc.RingRtcLogger;
 import org.thoughtcrime.securesms.service.DirectoryRefreshListener;
 import org.thoughtcrime.securesms.service.ExpiringMessageManager;
 import org.thoughtcrime.securesms.service.IncomingMessageObserver;
 import org.thoughtcrime.securesms.service.KeyCachingService;
 import org.thoughtcrime.securesms.service.LocalBackupListener;
+import org.thoughtcrime.securesms.revealable.ViewOnceMessageManager;
 import org.thoughtcrime.securesms.service.RotateSenderCertificateListener;
 import org.thoughtcrime.securesms.service.RotateSignedPreKeyListener;
 import org.thoughtcrime.securesms.service.UpdateApkRefreshListener;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
+import org.thoughtcrime.securesms.util.VersionTracker;
 import org.thoughtcrime.securesms.util.dynamiclanguage.DynamicLanguageContextWrapper;
-import org.webrtc.PeerConnectionFactory;
-import org.webrtc.PeerConnectionFactory.InitializationOptions;
 import org.webrtc.voiceengine.WebRtcAudioManager;
 import org.webrtc.voiceengine.WebRtcAudioUtils;
 import org.whispersystems.libsignal.logging.SignalProtocolLoggerProvider;
@@ -76,8 +87,6 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import dagger.ObjectGraph;
-
 /**
  * Will be called once when the TextSecure process is created.
  *
@@ -86,17 +95,16 @@ import dagger.ObjectGraph;
  *
  * @author Moxie Marlinspike
  */
-public class ApplicationContext extends MultiDexApplication implements DependencyInjector, DefaultLifecycleObserver {
+public class ApplicationContext extends MultiDexApplication implements DefaultLifecycleObserver {
 
   private static final String TAG = ApplicationContext.class.getSimpleName();
 
-  private ExpiringMessageManager  expiringMessageManager;
-  private TypingStatusRepository  typingStatusRepository;
-  private TypingStatusSender      typingStatusSender;
-  private JobManager              jobManager;
-  private IncomingMessageObserver incomingMessageObserver;
-  private ObjectGraph             objectGraph;
-  private PersistentLogger        persistentLogger;
+  private ExpiringMessageManager   expiringMessageManager;
+  private ViewOnceMessageManager   viewOnceMessageManager;
+  private TypingStatusRepository   typingStatusRepository;
+  private TypingStatusSender       typingStatusSender;
+  private IncomingMessageObserver  incomingMessageObserver;
+  private PersistentLogger         persistentLogger;
 
   private volatile boolean isAppVisible;
 
@@ -111,28 +119,38 @@ public class ApplicationContext extends MultiDexApplication implements Dependenc
     initializeSecurityProvider();
     initializeLogging();
     initializeCrashHandling();
-    initializeDependencyInjection();
-    initializeJobManager();
+    initializeFirstEverAppLaunch();
+    initializeAppDependencies();
+    initializeApplicationMigrations();
     initializeMessageRetrieval();
     initializeExpiringMessageManager();
+    initializeRevealableMessageManager();
     initializeTypingStatusRepository();
     initializeTypingStatusSender();
     initializeGcmCheck();
     initializeSignedPreKeyCheck();
     initializePeriodicTasks();
     initializeCircumvention();
-    initializeWebRtc();
+    initializeRingRtc();
     initializePendingMessages();
     initializeUnidentifiedDeliveryAbilityRefresh();
     initializeBlobProvider();
+    initializeCameraX();
     NotificationChannels.create(this);
     ProcessLifecycleOwner.get().getLifecycle().addObserver(this);
+
+    if (Build.VERSION.SDK_INT < 21) {
+      AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
+    }
+
+    ApplicationDependencies.getJobManager().beginJobLoop();
   }
 
   @Override
   public void onStart(@NonNull LifecycleOwner owner) {
     isAppVisible = true;
     Log.i(TAG, "App is now visible.");
+    ApplicationDependencies.getRecipientCache().warmUp();
     executePendingContactSync();
     KeyCachingService.onAppForegrounded(this);
   }
@@ -145,19 +163,12 @@ public class ApplicationContext extends MultiDexApplication implements Dependenc
     MessageNotifier.setVisibleThread(-1);
   }
 
-  @Override
-  public void injectDependencies(Object object) {
-    if (object instanceof InjectableType) {
-      objectGraph.inject(object);
-    }
-  }
-
-  public JobManager getJobManager() {
-    return jobManager;
-  }
-
   public ExpiringMessageManager getExpiringMessageManager() {
     return expiringMessageManager;
+  }
+
+  public ViewOnceMessageManager getViewOnceMessageManager() {
+    return viewOnceMessageManager;
   }
 
   public TypingStatusRepository getTypingStatusRepository() {
@@ -212,24 +223,31 @@ public class ApplicationContext extends MultiDexApplication implements Dependenc
     Thread.setDefaultUncaughtExceptionHandler(new UncaughtExceptionLogger(originalHandler));
   }
 
-  private void initializeJobManager() {
-    this.jobManager = new JobManager(this, new JobManager.Configuration.Builder()
-                                                                       .setDataSerializer(new JsonDataSerializer())
-                                                                       .setJobFactories(JobManagerFactories.getJobFactories(this))
-                                                                       .setConstraintFactories(JobManagerFactories.getConstraintFactories(this))
-                                                                       .setConstraintObservers(JobManagerFactories.getConstraintObservers(this))
-                                                                       .setJobStorage(new FastJobStorage(DatabaseFactory.getJobDatabase(this)))
-                                                                       .setDependencyInjector(this)
-                                                                       .build());
+  private void initializeApplicationMigrations() {
+    ApplicationMigrations.onApplicationCreate(this, ApplicationDependencies.getJobManager());
   }
 
   public void initializeMessageRetrieval() {
     this.incomingMessageObserver = new IncomingMessageObserver(this);
   }
 
-  private void initializeDependencyInjection() {
-    this.objectGraph = ObjectGraph.create(new SignalCommunicationModule(this, new SignalServiceNetworkAccess(this)),
-                                          new AxolotlStorageModule(this));
+  private void initializeAppDependencies() {
+    ApplicationDependencies.init(this, new ApplicationDependencyProvider(this, new SignalServiceNetworkAccess(this)));
+  }
+
+  private void initializeFirstEverAppLaunch() {
+    if (TextSecurePreferences.getFirstInstallVersion(this) == -1) {
+      if (!SQLCipherOpenHelper.databaseFileExists(this)) {
+        Log.i(TAG, "First ever app launch!");
+
+        InsightsOptOut.userRequestedOptOut(this);
+        TextSecurePreferences.setAppMigrationVersion(this, ApplicationMigrations.CURRENT_VERSION);
+        TextSecurePreferences.setJobManagerVersion(this, JobManager.CURRENT_VERSION);
+      }
+
+      Log.i(TAG, "Setting first install version to " + BuildConfig.CANONICAL_VERSION_CODE);
+      TextSecurePreferences.setFirstInstallVersion(this, BuildConfig.CANONICAL_VERSION_CODE);
+    }
   }
 
   private void initializeGcmCheck() {
@@ -237,19 +255,23 @@ public class ApplicationContext extends MultiDexApplication implements Dependenc
       long nextSetTime = TextSecurePreferences.getFcmTokenLastSetTime(this) + TimeUnit.HOURS.toMillis(6);
 
       if (TextSecurePreferences.getFcmToken(this) == null || nextSetTime <= System.currentTimeMillis()) {
-        this.jobManager.add(new FcmRefreshJob());
+        ApplicationDependencies.getJobManager().add(new FcmRefreshJob());
       }
     }
   }
 
   private void initializeSignedPreKeyCheck() {
     if (!TextSecurePreferences.isSignedPreKeyRegistered(this)) {
-      jobManager.add(new CreateSignedPreKeyJob(this));
+      ApplicationDependencies.getJobManager().add(new CreateSignedPreKeyJob(this));
     }
   }
 
   private void initializeExpiringMessageManager() {
     this.expiringMessageManager = new ExpiringMessageManager(this);
+  }
+
+  private void initializeRevealableMessageManager() {
+    this.viewOnceMessageManager = new ViewOnceMessageManager(this);
   }
 
   private void initializeTypingStatusRepository() {
@@ -271,7 +293,7 @@ public class ApplicationContext extends MultiDexApplication implements Dependenc
     }
   }
 
-  private void initializeWebRtc() {
+  private void initializeRingRtc() {
     try {
       Set<String> HARDWARE_AEC_BLACKLIST = new HashSet<String>() {{
         add("Pixel");
@@ -300,7 +322,7 @@ public class ApplicationContext extends MultiDexApplication implements Dependenc
         WebRtcAudioManager.setBlacklistDeviceForOpenSLESUsage(true);
       }
 
-      PeerConnectionFactory.initialize(InitializationOptions.builder(this).createInitializationOptions());
+      CallConnectionFactory.initialize(this, new RingRtcLogger());
     } catch (UnsatisfiedLinkError e) {
       Log.w(TAG, e);
     }
@@ -327,21 +349,25 @@ public class ApplicationContext extends MultiDexApplication implements Dependenc
 
   private void executePendingContactSync() {
     if (TextSecurePreferences.needsFullContactSync(this)) {
-      ApplicationContext.getInstance(this).getJobManager().add(new MultiDeviceContactUpdateJob(this, true));
+      ApplicationDependencies.getJobManager().add(new MultiDeviceContactUpdateJob(true));
     }
   }
 
   private void initializePendingMessages() {
     if (TextSecurePreferences.getNeedsMessagePull(this)) {
       Log.i(TAG, "Scheduling a message fetch.");
-      ApplicationContext.getInstance(this).getJobManager().add(new PushNotificationReceiveJob(this));
+      if (Build.VERSION.SDK_INT >= 26) {
+        FcmJobService.schedule(this);
+      } else {
+        ApplicationDependencies.getJobManager().add(new PushNotificationReceiveJob(this));
+      }
       TextSecurePreferences.setNeedsMessagePull(this, false);
     }
   }
 
   private void initializeUnidentifiedDeliveryAbilityRefresh() {
     if (TextSecurePreferences.isMultiDevice(this) && !TextSecurePreferences.isUnidentifiedDeliveryEnabled(this)) {
-      jobManager.add(new RefreshUnidentifiedDeliveryAbilityJob());
+      ApplicationDependencies.getJobManager().add(new RefreshUnidentifiedDeliveryAbilityJob());
     }
   }
 
@@ -349,6 +375,19 @@ public class ApplicationContext extends MultiDexApplication implements Dependenc
     AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
       BlobProvider.getInstance().onSessionStart(this);
     });
+  }
+
+  @SuppressLint("RestrictedApi")
+  private void initializeCameraX() {
+    if (CameraXUtil.isSupported()) {
+      new Thread(() -> {
+        try {
+          CameraX.init(this, Camera2AppConfig.create(this));
+        } catch (Throwable t) {
+          Log.w(TAG, "Failed to initialize CameraX.");
+        }
+      }, "signal-camerax-initialization").start();
+    }
   }
 
   @Override

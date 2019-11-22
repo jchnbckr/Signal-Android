@@ -2,13 +2,14 @@ package org.thoughtcrime.securesms;
 
 
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.v4.app.Fragment;
-import android.support.v7.widget.SwitchCompat;
+import androidx.annotation.NonNull;
+import androidx.fragment.app.Fragment;
+import androidx.appcompat.widget.SwitchCompat;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobs.MultiDeviceConfigurationUpdateJob;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.thoughtcrime.securesms.util.ViewUtil;
@@ -37,12 +38,11 @@ public class ReadReceiptsIntroFragment extends Fragment {
     preference.setChecked(TextSecurePreferences.isReadReceiptsEnabled(getContext()));
     preference.setOnCheckedChangeListener((buttonView, isChecked) -> {
       TextSecurePreferences.setReadReceiptsEnabled(getContext(), isChecked);
-      ApplicationContext.getInstance(getContext())
-                        .getJobManager()
-                        .add(new MultiDeviceConfigurationUpdateJob(isChecked,
-                                                                   TextSecurePreferences.isTypingIndicatorsEnabled(requireContext()),
-                                                                   TextSecurePreferences.isShowUnidentifiedDeliveryIndicatorsEnabled(getContext()),
-                                                                   TextSecurePreferences.isLinkPreviewsEnabled(getContext())));
+      ApplicationDependencies.getJobManager()
+                             .add(new MultiDeviceConfigurationUpdateJob(isChecked,
+                                                                        TextSecurePreferences.isTypingIndicatorsEnabled(requireContext()),
+                                                                        TextSecurePreferences.isShowUnidentifiedDeliveryIndicatorsEnabled(getContext()),
+                                                                        TextSecurePreferences.isLinkPreviewsEnabled(getContext())));
     });
 
     return v;

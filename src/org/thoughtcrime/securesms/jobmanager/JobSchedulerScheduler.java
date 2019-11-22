@@ -8,10 +8,11 @@ import android.app.job.JobService;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.support.annotation.NonNull;
-import android.support.annotation.RequiresApi;
+import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
 
 import org.thoughtcrime.securesms.ApplicationContext;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.logging.Log;
 
 import java.util.List;
@@ -24,7 +25,7 @@ public class JobSchedulerScheduler implements Scheduler {
   private static final String PREF_NAME    = "JobSchedulerScheduler_prefs";
   private static final String PREF_NEXT_ID = "pref_next_id";
 
-  private static final int MAX_ID = 75;
+  private static final int MAX_ID = 20;
 
   private final Application application;
 
@@ -65,7 +66,7 @@ public class JobSchedulerScheduler implements Scheduler {
     public boolean onStartJob(JobParameters params) {
       Log.d(TAG, "onStartJob()");
 
-      JobManager jobManager = ApplicationContext.getInstance(getApplicationContext()).getJobManager();
+      JobManager jobManager = ApplicationDependencies.getJobManager();
 
       jobManager.addOnEmptyQueueListener(new JobManager.EmptyQueueListener() {
         @Override

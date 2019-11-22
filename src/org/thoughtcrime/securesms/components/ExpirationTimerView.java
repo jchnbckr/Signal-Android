@@ -1,8 +1,8 @@
 package org.thoughtcrime.securesms.components;
 
 import android.content.Context;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import android.util.AttributeSet;
 
 import org.thoughtcrime.securesms.R;
@@ -11,7 +11,7 @@ import org.thoughtcrime.securesms.util.Util;
 import java.lang.ref.WeakReference;
 import java.util.concurrent.TimeUnit;
 
-public class ExpirationTimerView extends android.support.v7.widget.AppCompatImageView {
+public class ExpirationTimerView extends androidx.appcompat.widget.AppCompatImageView {
 
   private long startedAt;
   private long expiresIn;
@@ -19,19 +19,19 @@ public class ExpirationTimerView extends android.support.v7.widget.AppCompatImag
   private boolean visible = false;
   private boolean stopped = true;
 
-  private final int[] frames = new int[]{ R.drawable.timer00,
-                                          R.drawable.timer05,
-                                          R.drawable.timer10,
-                                          R.drawable.timer15,
-                                          R.drawable.timer20,
-                                          R.drawable.timer25,
-                                          R.drawable.timer30,
-                                          R.drawable.timer35,
-                                          R.drawable.timer40,
-                                          R.drawable.timer45,
-                                          R.drawable.timer50,
-                                          R.drawable.timer55,
-                                          R.drawable.timer60 };
+  private final int[] frames = new int[]{ R.drawable.ic_timer_00_12,
+                                          R.drawable.ic_timer_05_12,
+                                          R.drawable.ic_timer_10_12,
+                                          R.drawable.ic_timer_15_12,
+                                          R.drawable.ic_timer_20_12,
+                                          R.drawable.ic_timer_25_12,
+                                          R.drawable.ic_timer_30_12,
+                                          R.drawable.ic_timer_35_12,
+                                          R.drawable.ic_timer_40_12,
+                                          R.drawable.ic_timer_45_12,
+                                          R.drawable.ic_timer_50_12,
+                                          R.drawable.ic_timer_55_12,
+                                          R.drawable.ic_timer_60_12 };
 
   public ExpirationTimerView(Context context) {
     super(context);

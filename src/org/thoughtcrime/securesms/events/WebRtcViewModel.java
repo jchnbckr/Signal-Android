@@ -1,10 +1,10 @@
 package org.thoughtcrime.securesms.events;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thoughtcrime.securesms.recipients.Recipient;
-import org.thoughtcrime.securesms.webrtc.CameraState;
+import org.thoughtcrime.securesms.ringrtc.CameraState;
 import org.webrtc.SurfaceViewRenderer;
 import org.whispersystems.libsignal.IdentityKey;
 
@@ -118,6 +118,6 @@ public class WebRtcViewModel {
   }
 
   public @NonNull String toString() {
-    return "[State: " + state + ", recipient: " + recipient.getAddress() + ", identity: " + identityKey + ", remoteVideo: " + remoteVideoEnabled + ", localVideo: " + localCameraState.isEnabled() + "]";
+    return "[State: " + state + ", recipient: " + recipient.getId().serialize() + ", identity: " + identityKey + ", remoteVideo: " + remoteVideoEnabled + ", localVideo: " + localCameraState.isEnabled() + "]";
   }
 }

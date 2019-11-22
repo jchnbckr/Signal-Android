@@ -2,7 +2,7 @@ package org.thoughtcrime.securesms.mms;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import android.util.Log;
 
 import com.bumptech.glide.Glide;
@@ -20,6 +20,9 @@ import com.bumptech.glide.load.resource.gif.GifDrawable;
 import com.bumptech.glide.load.resource.gif.StreamGifDecoder;
 import com.bumptech.glide.module.AppGlideModule;
 
+import org.thoughtcrime.securesms.blurhash.BlurHash;
+import org.thoughtcrime.securesms.blurhash.BlurHashModelLoader;
+import org.thoughtcrime.securesms.blurhash.BlurHashResourceDecoder;
 import org.thoughtcrime.securesms.contacts.avatars.ContactPhoto;
 import org.thoughtcrime.securesms.crypto.AttachmentSecret;
 import org.thoughtcrime.securesms.crypto.AttachmentSecretProvider;
@@ -64,6 +67,8 @@ public class SignalGlideModule extends AppGlideModule {
     registry.prepend(File.class, Bitmap.class, new EncryptedBitmapCacheDecoder(secret, new StreamBitmapDecoder(new Downsampler(registry.getImageHeaderParsers(), context.getResources().getDisplayMetrics(), glide.getBitmapPool(), glide.getArrayPool()), glide.getArrayPool())));
     registry.prepend(File.class, GifDrawable.class, new EncryptedGifCacheDecoder(secret, new StreamGifDecoder(registry.getImageHeaderParsers(), new ByteBufferGifDecoder(context, registry.getImageHeaderParsers(), glide.getBitmapPool(), glide.getArrayPool()), glide.getArrayPool())));
 
+    registry.prepend(BlurHash.class, Bitmap.class, new BlurHashResourceDecoder());
+
     registry.prepend(Bitmap.class, new EncryptedBitmapResourceEncoder(secret));
     registry.prepend(GifDrawable.class, new EncryptedGifDrawableResourceEncoder(secret));
 
@@ -71,7 +76,8 @@ public class SignalGlideModule extends AppGlideModule {
     registry.append(DecryptableUri.class, InputStream.class, new DecryptableStreamUriLoader.Factory(context));
     registry.append(AttachmentModel.class, InputStream.class, new AttachmentStreamUriLoader.Factory());
     registry.append(ChunkedImageUrl.class, InputStream.class, new ChunkedImageUrlLoader.Factory());
-    registry.append(StickerRemoteUri.class, InputStream.class, new StickerRemoteUriLoader.Factory(context));
+    registry.append(StickerRemoteUri.class, InputStream.class, new StickerRemoteUriLoader.Factory());
+    registry.append(BlurHash.class, BlurHash.class, new BlurHashModelLoader.Factory());
     registry.replace(GlideUrl.class, InputStream.class, new OkHttpUrlLoader.Factory());
   }
 

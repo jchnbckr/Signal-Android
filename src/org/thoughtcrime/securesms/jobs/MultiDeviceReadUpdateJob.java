@@ -1,11 +1,11 @@
 package org.thoughtcrime.securesms.jobs;
 
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 import com.annimon.stream.Stream;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import org.thoughtcrime.securesms.database.Address;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobmanager.Data;
 import org.thoughtcrime.securesms.jobmanager.Job;
 import org.thoughtcrime.securesms.jobmanager.impl.NetworkConstraint;
@@ -13,13 +13,16 @@ import org.thoughtcrime.securesms.logging.Log;
 
 import org.thoughtcrime.securesms.crypto.UnidentifiedAccessUtil;
 import org.thoughtcrime.securesms.database.MessagingDatabase.SyncMessageId;
-import org.thoughtcrime.securesms.dependencies.InjectableType;
+import org.thoughtcrime.securesms.recipients.Recipient;
+import org.thoughtcrime.securesms.recipients.RecipientId;
+import org.thoughtcrime.securesms.recipients.RecipientUtil;
 import org.thoughtcrime.securesms.util.JsonUtils;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.whispersystems.signalservice.api.SignalServiceMessageSender;
 import org.whispersystems.signalservice.api.crypto.UntrustedIdentityException;
 import org.whispersystems.signalservice.api.messages.multidevice.ReadMessage;
 import org.whispersystems.signalservice.api.messages.multidevice.SignalServiceSyncMessage;
+import org.whispersystems.signalservice.api.push.SignalServiceAddress;
 import org.whispersystems.signalservice.api.push.exceptions.PushNetworkException;
 
 import java.io.IOException;
@@ -28,9 +31,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import javax.inject.Inject;
-
-public class MultiDeviceReadUpdateJob extends BaseJob implements InjectableType {
+public class MultiDeviceReadUpdateJob extends BaseJob {
 
   public static final String KEY = "MultiDeviceReadUpdateJob";
 
@@ -39,8 +40,6 @@ public class MultiDeviceReadUpdateJob extends BaseJob implements InjectableType 
   private static final String KEY_MESSAGE_IDS = "message_ids";
 
   private List<SerializableSyncMessageId> messageIds;
-
-  @Inject SignalServiceMessageSender messageSender;
 
   public MultiDeviceReadUpdateJob(List<SyncMessageId> messageIds) {
     this(new Job.Parameters.Builder()
@@ -57,7 +56,7 @@ public class MultiDeviceReadUpdateJob extends BaseJob implements InjectableType 
     this.messageIds = new LinkedList<>();
 
     for (SyncMessageId messageId : messageIds) {
-      this.messageIds.add(new SerializableSyncMessageId(messageId.getAddress().toPhoneString(), messageId.getTimetamp()));
+      this.messageIds.add(new SerializableSyncMessageId(messageId.getRecipientId().serialize(), messageId.getTimetamp()));
     }
   }
 
@@ -91,9 +90,11 @@ public class MultiDeviceReadUpdateJob extends BaseJob implements InjectableType 
     List<ReadMessage> readMessages = new LinkedList<>();
 
     for (SerializableSyncMessageId messageId : messageIds) {
-      readMessages.add(new ReadMessage(messageId.sender, messageId.timestamp));
+      Recipient recipient = Recipient.resolved(RecipientId.from(messageId.recipientId));
+      readMessages.add(new ReadMessage(RecipientUtil.toSignalServiceAddress(context, recipient), messageId.timestamp));
     }
 
+    SignalServiceMessageSender messageSender = ApplicationDependencies.getSignalServiceMessageSender();
     messageSender.sendMessage(SignalServiceSyncMessage.forRead(readMessages), UnidentifiedAccessUtil.getAccessForSync(context));
   }
 
@@ -112,14 +113,14 @@ public class MultiDeviceReadUpdateJob extends BaseJob implements InjectableType 
     private static final long serialVersionUID = 1L;
 
     @JsonProperty
-    private final String sender;
+    private final String recipientId;
 
     @JsonProperty
     private final long   timestamp;
 
-    private SerializableSyncMessageId(@JsonProperty("sender") String sender, @JsonProperty("timestamp") long timestamp) {
-      this.sender = sender;
-      this.timestamp = timestamp;
+    private SerializableSyncMessageId(@JsonProperty("recipientId") String recipientId, @JsonProperty("timestamp") long timestamp) {
+      this.recipientId = recipientId;
+      this.timestamp   = timestamp;
     }
   }
 
@@ -134,11 +135,10 @@ public class MultiDeviceReadUpdateJob extends BaseJob implements InjectableType 
                                           throw new AssertionError(e);
                                         }
                                       })
-                                      .map(id -> new SyncMessageId(Address.fromSerialized(id.sender), id.timestamp))
+                                      .map(id -> new SyncMessageId(RecipientId.from(id.recipientId), id.timestamp))
                                       .toList();
 
       return new MultiDeviceReadUpdateJob(parameters, ids);
-
     }
   }
 }

@@ -5,12 +5,12 @@
              xmlns:tools="http://schemas.android.com/tools"
              android:orientation="vertical">
     
-    <android.support.v4.widget.SwipeRefreshLayout
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
             android:id="@+id/swipe_refresh"
             android:layout_width="match_parent"
             android:layout_height="wrap_content">
 
-        <android.support.v7.widget.RecyclerView
+        <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recycler_view"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
@@ -25,14 +25,15 @@
             android:text="@string/contact_selection_group_activity__finding_contacts"
             android:textSize="20sp" />
 
-    </android.support.v4.widget.SwipeRefreshLayout>
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
     <org.thoughtcrime.securesms.components.RecyclerViewFastScroller
         android:id="@+id/fast_scroller"
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
         android:visibility="gone"
-        android:layout_gravity="end"/>
+        android:layout_gravity="end"
+        tools:visibility="visible" />
 
     <LinearLayout android:id="@+id/show_contacts_container"
                   android:layout_width="wrap_content"

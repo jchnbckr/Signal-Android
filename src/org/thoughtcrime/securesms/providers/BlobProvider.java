@@ -3,19 +3,24 @@ package org.thoughtcrime.securesms.providers;
 import android.app.Application;
 import android.content.Context;
 import android.content.UriMatcher;
+import android.media.MediaDataSource;
 import android.net.Uri;
-import android.support.annotation.IntRange;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.WorkerThread;
+import androidx.annotation.IntRange;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
+import androidx.annotation.WorkerThread;
 
 import org.thoughtcrime.securesms.crypto.AttachmentSecret;
 import org.thoughtcrime.securesms.crypto.AttachmentSecretProvider;
 import org.thoughtcrime.securesms.crypto.ModernDecryptingPartInputStream;
 import org.thoughtcrime.securesms.crypto.ModernEncryptingPartOutputStream;
 import org.thoughtcrime.securesms.logging.Log;
+import org.thoughtcrime.securesms.util.IOFunction;
 import org.thoughtcrime.securesms.util.Util;
 import org.thoughtcrime.securesms.util.concurrent.SignalExecutors;
+import org.thoughtcrime.securesms.video.ByteArrayMediaDataSource;
+import org.thoughtcrime.securesms.video.EncryptedMediaDataSource;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -25,6 +30,8 @@ import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Allows for the creation and retrieval of blobs.
@@ -79,6 +86,42 @@ public class BlobProvider {
    * @throws IOException If the stream fails to open or the spec of the URI doesn't match.
    */
   public synchronized @NonNull InputStream getStream(@NonNull Context context, @NonNull Uri uri) throws IOException {
+    return getStream(context, uri, 0L);
+  }
+
+  /**
+   * Retrieve a stream for the content with the specified URI starting from the specified position.
+   * @throws IOException If the stream fails to open or the spec of the URI doesn't match.
+   */
+  public synchronized @NonNull InputStream getStream(@NonNull Context context, @NonNull Uri uri, long position) throws IOException {
+    return getBlobRepresentation(context,
+                                 uri,
+                                 bytes -> {
+                                   ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
+                                   if (byteArrayInputStream.skip(position) != position) {
+                                     throw new IOException("Failed to skip to position " + position + " for: " + uri);
+                                   }
+                                   return byteArrayInputStream;
+                                 },
+                                 file -> ModernDecryptingPartInputStream.createFor(getAttachmentSecret(context),
+                                                                                   file,
+                                                                                   position));
+  }
+
+  @RequiresApi(23)
+  public synchronized @NonNull MediaDataSource getMediaDataSource(@NonNull Context context, @NonNull Uri uri) throws IOException {
+    return getBlobRepresentation(context,
+                                 uri,
+                                 ByteArrayMediaDataSource::new,
+                                 file -> EncryptedMediaDataSource.createForDiskBlob(getAttachmentSecret(context), file));
+  }
+
+  private synchronized @NonNull <T> T getBlobRepresentation(@NonNull Context context,
+                                                            @NonNull Uri uri,
+                                                            @NonNull IOFunction<byte[], T> getByteRepresentation,
+                                                            @NonNull IOFunction<File, T> getFileRepresentation)
+      throws IOException
+  {
     if (isAuthority(uri)) {
       StorageType storageType = StorageType.decode(uri.getPathSegments().get(STORAGE_TYPE_PATH_SEGMENT));
 
@@ -89,7 +132,7 @@ public class BlobProvider {
           if (storageType == StorageType.SINGLE_USE_MEMORY) {
             memoryBlobs.remove(uri);
           }
-          return new ByteArrayInputStream(data);
+          return getByteRepresentation.apply(data);
         } else {
           throw new IOException("Failed to find in-memory blob for: " + uri);
         }
@@ -98,11 +141,15 @@ public class BlobProvider {
         String directory = getDirectory(storageType);
         File   file      = new File(getOrCreateCacheDirectory(context, directory), buildFileName(id));
 
-        return ModernDecryptingPartInputStream.createFor(AttachmentSecretProvider.getInstance(context).getOrCreateAttachmentSecret(), file, 0);
+        return getFileRepresentation.apply(file);
       }
     } else {
       throw new IOException("Provided URI does not match this spec. Uri: " + uri);
     }
+  }
+
+  private synchronized AttachmentSecret getAttachmentSecret(@NonNull Context context) {
+    return AttachmentSecretProvider.getInstance(context).getOrCreateAttachmentSecret();
   }
 
   /**
@@ -173,7 +220,34 @@ public class BlobProvider {
   }
 
   @WorkerThread
-  private synchronized @NonNull Uri writeBlobSpecToDisk(@NonNull Context context, @NonNull BlobSpec blobSpec, @Nullable ErrorListener errorListener) throws IOException {
+  private synchronized @NonNull Uri writeBlobSpecToDisk(@NonNull Context context, @NonNull BlobSpec blobSpec)
+      throws IOException
+  {
+    CountDownLatch               latch     = new CountDownLatch(1);
+    AtomicReference<IOException> exception = new AtomicReference<>(null);
+    Uri                          uri       = writeBlobSpecToDiskAsync(context, blobSpec, latch::countDown, exception::set);
+
+    try {
+      latch.await();
+    } catch (InterruptedException e) {
+      throw new IOException(e);
+    }
+
+    if (exception.get() != null) {
+      throw exception.get();
+    }
+
+    return uri;
+  }
+
+
+  @WorkerThread
+  private synchronized @NonNull Uri writeBlobSpecToDiskAsync(@NonNull Context context,
+                                                             @NonNull BlobSpec blobSpec,
+                                                             @Nullable SuccessListener successListener,
+                                                             @Nullable ErrorListener errorListener)
+      throws IOException
+  {
     AttachmentSecret attachmentSecret = AttachmentSecretProvider.getInstance(context).getOrCreateAttachmentSecret();
     String           directory        = getDirectory(blobSpec.getStorageType());
     File             outputFile       = new File(getOrCreateCacheDirectory(context, directory), buildFileName(blobSpec.id));
@@ -182,6 +256,10 @@ public class BlobProvider {
     SignalExecutors.UNBOUNDED.execute(() -> {
       try {
         Util.copy(blobSpec.getData(), outputStream);
+
+        if (successListener != null) {
+          successListener.onSuccess();
+        }
       } catch (IOException e) {
         if (errorListener != null) {
           errorListener.onError(e);
@@ -258,8 +336,23 @@ public class BlobProvider {
      * period from one {@link Application#onCreate()} to the next.
      */
     @WorkerThread
-    public Uri createForSingleSessionOnDisk(@NonNull Context context, @Nullable ErrorListener errorListener) throws IOException {
-      return writeBlobSpecToDisk(context, buildBlobSpec(StorageType.SINGLE_SESSION_DISK), errorListener);
+    public Uri createForSingleSessionOnDisk(@NonNull Context context) throws IOException {
+      return writeBlobSpecToDisk(context, buildBlobSpec(StorageType.SINGLE_SESSION_DISK));
+    }
+
+    /**
+     * Create a blob that will exist for a single app session. An app session is defined as the
+     * period from one {@link Application#onCreate()} to the next. The file will be created on disk
+     * synchronously, but the data will copied asynchronously. This is helpful when the copy is
+     * long-running, such as in the case of recording a voice note.
+     */
+    @WorkerThread
+    public Uri createForSingleSessionOnDiskAsync(@NonNull Context context,
+                                                 @Nullable SuccessListener successListener,
+                                                 @Nullable ErrorListener errorListener)
+        throws IOException
+    {
+      return writeBlobSpecToDiskAsync(context, buildBlobSpec(StorageType.SINGLE_SESSION_DISK), successListener, errorListener);
     }
 
     /**
@@ -267,8 +360,25 @@ public class BlobProvider {
      * eventually call {@link BlobProvider#delete(Context, Uri)} when the blob is no longer in use.
      */
     @WorkerThread
-    public Uri createForMultipleSessionsOnDisk(@NonNull Context context, @Nullable ErrorListener errorListener) throws IOException {
-      return writeBlobSpecToDisk(context, buildBlobSpec(StorageType.MULTI_SESSION_DISK), errorListener);
+    public Uri createForMultipleSessionsOnDisk(@NonNull Context context) throws IOException {
+      return writeBlobSpecToDisk(context, buildBlobSpec(StorageType.MULTI_SESSION_DISK));
+    }
+
+    /**
+     * Create a blob that will exist for multiple app sessions. The file will be created on disk
+     * synchronously, but the data will copied asynchronously. This is helpful when the copy is
+     * long-running, such as in the case of recording a voice note.
+     *
+     * It is the caller's responsibility to eventually call {@link BlobProvider#delete(Context, Uri)}
+     * when the blob is no longer in use.
+     */
+    @WorkerThread
+    public Uri createForMultipleSessionsOnDiskAsync(@NonNull Context context,
+                                                    @Nullable SuccessListener successListener,
+                                                    @Nullable ErrorListener errorListener)
+        throws IOException
+    {
+      return writeBlobSpecToDiskAsync(context, buildBlobSpec(StorageType.MULTI_SESSION_DISK), successListener, errorListener);
     }
   }
 
@@ -309,6 +419,11 @@ public class BlobProvider {
     public Uri createForSingleSessionInMemory() {
       return writeBlobSpecToMemory(buildBlobSpec(StorageType.SINGLE_SESSION_MEMORY), data);
     }
+  }
+
+  public interface SuccessListener {
+    @WorkerThread
+    void onSuccess();
   }
 
   public interface ErrorListener {
@@ -397,4 +512,5 @@ public class BlobProvider {
       throw new IOException("Failed to decode lifespan.");
     }
   }
+
 }

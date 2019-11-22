@@ -17,7 +17,7 @@
 package org.thoughtcrime.securesms.database.model;
 
 import android.content.Context;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import android.text.SpannableString;
 
 import org.thoughtcrime.securesms.database.MmsSmsColumns;
@@ -84,7 +84,7 @@ public abstract class DisplayRecord {
   public abstract SpannableString getDisplayBody(@NonNull Context context);
 
   public Recipient getRecipient() {
-    return recipient;
+    return recipient.live().get();
   }
 
   public long getDateSent() {

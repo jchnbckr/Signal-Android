@@ -17,34 +17,45 @@
 package org.thoughtcrime.securesms.sms;
 
 import android.content.Context;
-import android.support.annotation.NonNull;
 
-import org.thoughtcrime.securesms.database.MessagingDatabase.SyncMessageId;
-import org.thoughtcrime.securesms.database.MmsSmsDatabase;
-import org.thoughtcrime.securesms.database.NoSuchMessageException;
-import org.thoughtcrime.securesms.database.model.SmsMessageRecord;
-import org.thoughtcrime.securesms.jobmanager.JobManager;
-import org.thoughtcrime.securesms.logging.Log;
+import androidx.annotation.NonNull;
+
+import com.annimon.stream.Stream;
 
 import org.thoughtcrime.securesms.ApplicationContext;
 import org.thoughtcrime.securesms.attachments.Attachment;
-import org.thoughtcrime.securesms.database.Address;
+import org.thoughtcrime.securesms.attachments.AttachmentId;
+import org.thoughtcrime.securesms.attachments.DatabaseAttachment;
+import org.thoughtcrime.securesms.contacts.sync.DirectoryHelper;
 import org.thoughtcrime.securesms.database.AttachmentDatabase;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
+import org.thoughtcrime.securesms.database.MessagingDatabase.SyncMessageId;
 import org.thoughtcrime.securesms.database.MmsDatabase;
+import org.thoughtcrime.securesms.database.MmsSmsDatabase;
+import org.thoughtcrime.securesms.database.NoSuchMessageException;
 import org.thoughtcrime.securesms.database.RecipientDatabase;
 import org.thoughtcrime.securesms.database.SmsDatabase;
 import org.thoughtcrime.securesms.database.ThreadDatabase;
 import org.thoughtcrime.securesms.database.model.MessageRecord;
+import org.thoughtcrime.securesms.database.model.SmsMessageRecord;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
+import org.thoughtcrime.securesms.jobmanager.Job;
+import org.thoughtcrime.securesms.jobmanager.JobManager;
+import org.thoughtcrime.securesms.jobs.AttachmentCopyJob;
+import org.thoughtcrime.securesms.jobs.AttachmentCompressionJob;
+import org.thoughtcrime.securesms.jobs.AttachmentUploadJob;
 import org.thoughtcrime.securesms.jobs.MmsSendJob;
 import org.thoughtcrime.securesms.jobs.PushGroupSendJob;
 import org.thoughtcrime.securesms.jobs.PushMediaSendJob;
 import org.thoughtcrime.securesms.jobs.PushTextSendJob;
 import org.thoughtcrime.securesms.jobs.SmsSendJob;
+import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.mms.MmsException;
 import org.thoughtcrime.securesms.mms.OutgoingMediaMessage;
+import org.thoughtcrime.securesms.mms.OutgoingSecureMediaMessage;
 import org.thoughtcrime.securesms.push.AccountManagerFactory;
 import org.thoughtcrime.securesms.recipients.Recipient;
+import org.thoughtcrime.securesms.recipients.RecipientId;
 import org.thoughtcrime.securesms.service.ExpiringMessageManager;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.whispersystems.libsignal.util.guava.Optional;
@@ -52,6 +63,9 @@ import org.whispersystems.signalservice.api.SignalServiceAccountManager;
 import org.whispersystems.signalservice.api.push.ContactTokenDetails;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 public class MessageSender {
 
@@ -112,9 +126,112 @@ public class MessageSender {
     }
   }
 
-  public static void resendGroupMessage(Context context, MessageRecord messageRecord, Address filterAddress) {
+  public static void sendMediaBroadcast(@NonNull Context context, @NonNull List<OutgoingSecureMediaMessage> messages) {
+    if (messages.isEmpty()) {
+      Log.w(TAG, "sendMediaBroadcast() - No messages!");
+      return;
+    }
+
+    if (!isValidBroadcastList(messages)) {
+      Log.w(TAG, "sendMediaBroadcast() - Invalid message list!");
+      return;
+    }
+
+    ThreadDatabase                 threadDatabase      = DatabaseFactory.getThreadDatabase(context);
+    MmsDatabase                    mmsDatabase         = DatabaseFactory.getMmsDatabase(context);
+    AttachmentDatabase             attachmentDatabase  = DatabaseFactory.getAttachmentDatabase(context);
+    List<List<DatabaseAttachment>> databaseAttachments = new ArrayList<>(messages.get(0).getAttachments().size());
+    List<Long>                     messageIds          = new ArrayList<>(messages.size());
+
+    for (int i = 0; i < messages.get(0).getAttachments().size(); i++) {
+      databaseAttachments.add(new ArrayList<>(messages.size()));
+    }
+
+    try {
+      try {
+        mmsDatabase.beginTransaction();
+
+        for (OutgoingSecureMediaMessage message : messages) {
+          long                     allocatedThreadId = threadDatabase.getThreadIdFor(message.getRecipient(), message.getDistributionType());
+          long                     messageId         = mmsDatabase.insertMessageOutbox(message, allocatedThreadId, false, null);
+          List<DatabaseAttachment> attachments       = attachmentDatabase.getAttachmentsForMessage(messageId);
+
+          if (attachments.size() != databaseAttachments.size()) {
+            Log.w(TAG, "Got back an attachment list that was a different size than expected. Expected: " + databaseAttachments.size() + "  Actual: "+ attachments.size());
+            return;
+          }
+
+          for (int i = 0; i < attachments.size(); i++) {
+            databaseAttachments.get(i).add(attachments.get(i));
+          }
+
+          messageIds.add(messageId);
+        }
+
+        mmsDatabase.setTransactionSuccessful();
+      } finally {
+        mmsDatabase.endTransaction();
+      }
+
+      List<Job> compressionJobs = new ArrayList<>(databaseAttachments.size());
+      List<Job> uploadJobs      = new ArrayList<>(databaseAttachments.size());
+      List<Job> copyJobs        = new ArrayList<>(databaseAttachments.size());
+      List<Job> messageJobs     = new ArrayList<>(databaseAttachments.get(0).size());
+
+      for (List<DatabaseAttachment> attachmentList : databaseAttachments) {
+        DatabaseAttachment source = attachmentList.get(0);
+
+        compressionJobs.add(AttachmentCompressionJob.fromAttachment(source, false, -1));
+
+        uploadJobs.add(new AttachmentUploadJob(source.getAttachmentId()));
+
+        if (attachmentList.size() > 1) {
+          AttachmentId       sourceId       = source.getAttachmentId();
+          List<AttachmentId> destinationIds = Stream.of(attachmentList.subList(1, attachmentList.size()))
+                                                    .map(DatabaseAttachment::getAttachmentId)
+                                                    .toList();
+
+          copyJobs.add(new AttachmentCopyJob(sourceId, destinationIds));
+        }
+      }
+
+      for (int i = 0; i < messageIds.size(); i++) {
+        long                       messageId = messageIds.get(i);
+        OutgoingSecureMediaMessage message   = messages.get(i);
+        Recipient                  recipient = message.getRecipient();
+
+        if (isLocalSelfSend(context, recipient, false)) {
+          sendLocalMediaSelf(context, messageId);
+        } else if (isGroupPushSend(recipient)) {
+          messageJobs.add(new PushGroupSendJob(messageId, recipient.getId(), null));
+        } else {
+          messageJobs.add(new PushMediaSendJob(messageId, recipient));
+        }
+      }
+
+      Log.i(TAG, String.format(Locale.ENGLISH, "sendMediaBroadcast() - Uploading %d attachment(s), copying %d of them, then sending %d messages.",
+                               uploadJobs.size(),
+                               copyJobs.size(),
+                               messageJobs.size()));
+
+      JobManager.Chain chain = ApplicationDependencies.getJobManager()
+                                                      .startChain(compressionJobs)
+                                                      .then(uploadJobs);
+
+      if (copyJobs.size() > 0) {
+        chain = chain.then(copyJobs);
+      }
+
+      chain = chain.then(messageJobs);
+      chain.enqueue();
+    } catch (MmsException e) {
+      Log.w(TAG, "sendMediaBroadcast() - Failed to send messages!", e);
+    }
+  }
+
+  public static void resendGroupMessage(Context context, MessageRecord messageRecord, RecipientId filterRecipientId) {
     if (!messageRecord.isMms()) throw new AssertionError("Not Group");
-    sendGroupPush(context, messageRecord.getRecipient(), messageRecord.getId(), filterAddress);
+    sendGroupPush(context, messageRecord.getRecipient(), messageRecord.getId(), filterRecipientId);
   }
 
   public static void resend(Context context, MessageRecord messageRecord) {
@@ -158,28 +275,28 @@ public class MessageSender {
   }
 
   private static void sendTextPush(Context context, Recipient recipient, long messageId) {
-    JobManager jobManager = ApplicationContext.getInstance(context).getJobManager();
-    jobManager.add(new PushTextSendJob(messageId, recipient.getAddress()));
+    JobManager jobManager = ApplicationDependencies.getJobManager();
+    jobManager.add(new PushTextSendJob(messageId, recipient));
   }
 
   private static void sendMediaPush(Context context, Recipient recipient, long messageId) {
-    JobManager jobManager = ApplicationContext.getInstance(context).getJobManager();
-    PushMediaSendJob.enqueue(context, jobManager, messageId, recipient.getAddress());
+    JobManager jobManager = ApplicationDependencies.getJobManager();
+    PushMediaSendJob.enqueue(context, jobManager, messageId, recipient);
   }
 
-  private static void sendGroupPush(Context context, Recipient recipient, long messageId, Address filterAddress) {
-    JobManager jobManager = ApplicationContext.getInstance(context).getJobManager();
-    PushGroupSendJob.enqueue(context, jobManager, messageId, recipient.getAddress(), filterAddress);
+  private static void sendGroupPush(Context context, Recipient recipient, long messageId, RecipientId filterRecipientId) {
+    JobManager jobManager = ApplicationDependencies.getJobManager();
+    PushGroupSendJob.enqueue(context, jobManager, messageId, recipient.getId(), filterRecipientId);
   }
 
   private static void sendSms(Context context, Recipient recipient, long messageId) {
-    JobManager jobManager = ApplicationContext.getInstance(context).getJobManager();
-    jobManager.add(new SmsSendJob(context, messageId, recipient.getName()));
+    JobManager jobManager = ApplicationDependencies.getJobManager();
+    jobManager.add(new SmsSendJob(context, messageId, recipient));
   }
 
   private static void sendMms(Context context, long messageId) {
-    JobManager jobManager = ApplicationContext.getInstance(context).getJobManager();
-    jobManager.add(new MmsSendJob(messageId));
+    JobManager jobManager = ApplicationDependencies.getJobManager();
+    MmsSendJob.enqueue(context, jobManager, messageId);
   }
 
   private static boolean isPushTextSend(Context context, Recipient recipient, boolean keyExchange) {
@@ -199,7 +316,7 @@ public class MessageSender {
       return false;
     }
 
-    if (recipient.isGroupRecipient()) {
+    if (recipient.isGroup()) {
       return false;
     }
 
@@ -207,8 +324,7 @@ public class MessageSender {
   }
 
   private static boolean isGroupPushSend(Recipient recipient) {
-    return recipient.getAddress().isGroup() &&
-           !recipient.getAddress().isMmsGroup();
+    return recipient.isGroup() && !recipient.isMmsGroup();
   }
 
   private static boolean isPushDestination(Context context, Recipient destination) {
@@ -218,16 +334,8 @@ public class MessageSender {
       return false;
     } else {
       try {
-        SignalServiceAccountManager   accountManager = AccountManagerFactory.createManager(context);
-        Optional<ContactTokenDetails> registeredUser = accountManager.getContact(destination.getAddress().serialize());
-
-        if (!registeredUser.isPresent()) {
-          DatabaseFactory.getRecipientDatabase(context).setRegistered(destination, RecipientDatabase.RegisteredState.NOT_REGISTERED);
-          return false;
-        } else {
-          DatabaseFactory.getRecipientDatabase(context).setRegistered(destination, RecipientDatabase.RegisteredState.REGISTERED);
-          return true;
-        }
+        RecipientDatabase.RegisteredState state = DirectoryHelper.refreshDirectoryFor(context, destination, false);
+        return state == RecipientDatabase.RegisteredState.REGISTERED;
       } catch (IOException e1) {
         Log.w(TAG, e1);
         return false;
@@ -249,7 +357,7 @@ public class MessageSender {
       MmsDatabase            mmsDatabase        = DatabaseFactory.getMmsDatabase(context);
       MmsSmsDatabase         mmsSmsDatabase     = DatabaseFactory.getMmsSmsDatabase(context);
       OutgoingMediaMessage   message            = mmsDatabase.getOutgoingMessage(messageId);
-      SyncMessageId          syncId             = new SyncMessageId(Address.fromSerialized(TextSecurePreferences.getLocalNumber(context)), message.getSentTimeMillis());
+      SyncMessageId          syncId             = new SyncMessageId(Recipient.self().getId(), message.getSentTimeMillis());
 
       for (Attachment attachment : message.getAttachments()) {
         attachmentDatabase.markAttachmentUploaded(messageId, attachment);
@@ -276,7 +384,7 @@ public class MessageSender {
       SmsDatabase            smsDatabase       = DatabaseFactory.getSmsDatabase(context);
       MmsSmsDatabase         mmsSmsDatabase    = DatabaseFactory.getMmsSmsDatabase(context);
       SmsMessageRecord       message           = smsDatabase.getMessage(messageId);
-      SyncMessageId          syncId            = new SyncMessageId(Address.fromSerialized(TextSecurePreferences.getLocalNumber(context)), message.getDateSent());
+      SyncMessageId          syncId            = new SyncMessageId(Recipient.self().getId(), message.getDateSent());
 
       smsDatabase.markAsSent(messageId, true);
       smsDatabase.markUnidentified(messageId, true);
@@ -291,5 +399,21 @@ public class MessageSender {
     } catch (NoSuchMessageException e) {
       Log.w("Failed to update self-sent message.", e);
     }
+  }
+
+  private static boolean isValidBroadcastList(@NonNull List<OutgoingSecureMediaMessage> messages) {
+    if (messages.isEmpty()) {
+      return false;
+    }
+
+    int attachmentSize = messages.get(0).getAttachments().size();
+
+    for (OutgoingSecureMediaMessage message : messages) {
+      if (message.getAttachments().size() != attachmentSize) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }

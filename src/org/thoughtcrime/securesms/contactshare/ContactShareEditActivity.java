@@ -1,20 +1,18 @@
 package org.thoughtcrime.securesms.contactshare;
 
 import android.app.Activity;
-import android.arch.lifecycle.ViewModelProviders;
+import androidx.lifecycle.ViewModelProviders;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import android.view.View;
 import android.widget.Toast;
-
-import com.annimon.stream.Stream;
 
 import org.thoughtcrime.securesms.PassphraseRequiredActionBarActivity;
 import org.thoughtcrime.securesms.R;
@@ -77,7 +75,7 @@ public class ContactShareEditActivity extends PassphraseRequiredActionBarActivit
     ContactShareEditAdapter contactAdapter = new ContactShareEditAdapter(GlideApp.with(this), dynamicLanguage.getCurrentLocale(), this);
     contactList.setAdapter(contactAdapter);
 
-    ContactRepository contactRepository = new ContactRepository(this,
+    SharedContactRepository contactRepository = new SharedContactRepository(this,
                                                                 AsyncTask.THREAD_POOL_EXECUTOR,
                                                                 DatabaseFactory.getContactsDatabase(this));
 

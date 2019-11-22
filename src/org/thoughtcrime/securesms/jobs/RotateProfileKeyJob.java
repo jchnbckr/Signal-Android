@@ -1,16 +1,16 @@
 package org.thoughtcrime.securesms.jobs;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thoughtcrime.securesms.ApplicationContext;
 import org.thoughtcrime.securesms.crypto.ProfileKeyUtil;
-import org.thoughtcrime.securesms.database.Address;
-import org.thoughtcrime.securesms.dependencies.InjectableType;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobmanager.Data;
 import org.thoughtcrime.securesms.jobmanager.Job;
 import org.thoughtcrime.securesms.jobmanager.impl.NetworkConstraint;
 import org.thoughtcrime.securesms.profiles.AvatarHelper;
+import org.thoughtcrime.securesms.recipients.Recipient;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.whispersystems.signalservice.api.SignalServiceAccountManager;
 import org.whispersystems.signalservice.api.push.exceptions.PushNetworkException;
@@ -20,13 +20,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 
-import javax.inject.Inject;
-
-public class RotateProfileKeyJob extends BaseJob implements InjectableType {
+public class RotateProfileKeyJob extends BaseJob {
 
   public static String KEY = "RotateProfileKeyJob";
-
-  @Inject SignalServiceAccountManager accountManager;
 
   public RotateProfileKeyJob() {
     this(new Job.Parameters.Builder()
@@ -53,14 +49,13 @@ public class RotateProfileKeyJob extends BaseJob implements InjectableType {
 
   @Override
   public void onRun() throws Exception {
-    byte[] profileKey = ProfileKeyUtil.rotateProfileKey(context);
+    SignalServiceAccountManager accountManager = ApplicationDependencies.getSignalServiceAccountManager();
+    byte[]                      profileKey     = ProfileKeyUtil.rotateProfileKey(context);
 
     accountManager.setProfileName(profileKey, TextSecurePreferences.getProfileName(context));
     accountManager.setProfileAvatar(profileKey, getProfileAvatar());
 
-    ApplicationContext.getInstance(context)
-                      .getJobManager()
-                      .add(new RefreshAttributesJob());
+    ApplicationDependencies.getJobManager().add(new RefreshAttributesJob());
   }
 
   @Override
@@ -75,8 +70,7 @@ public class RotateProfileKeyJob extends BaseJob implements InjectableType {
 
   private @Nullable StreamDetails getProfileAvatar() {
     try {
-      Address localAddress = Address.fromSerialized(TextSecurePreferences.getLocalNumber(context));
-      File    avatarFile   = AvatarHelper.getAvatarFile(context, localAddress);
+      File avatarFile = AvatarHelper.getAvatarFile(context, Recipient.self().getId());
 
       if (avatarFile.exists()) {
         return new StreamDetails(new FileInputStream(avatarFile), "image/jpeg", avatarFile.length());

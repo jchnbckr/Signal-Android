@@ -22,13 +22,15 @@ import android.graphics.Typeface;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import android.text.SpannableString;
 import android.text.style.StyleSpan;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thoughtcrime.securesms.components.AlertView;
 import org.thoughtcrime.securesms.components.AvatarImageView;
@@ -38,13 +40,13 @@ import org.thoughtcrime.securesms.components.ThumbnailView;
 import org.thoughtcrime.securesms.components.TypingIndicatorView;
 import org.thoughtcrime.securesms.database.model.ThreadRecord;
 import org.thoughtcrime.securesms.mms.GlideRequests;
+import org.thoughtcrime.securesms.recipients.LiveRecipient;
 import org.thoughtcrime.securesms.recipients.Recipient;
-import org.thoughtcrime.securesms.recipients.RecipientModifiedListener;
+import org.thoughtcrime.securesms.recipients.RecipientForeverObserver;
 import org.thoughtcrime.securesms.search.model.MessageResult;
 import org.thoughtcrime.securesms.util.DateUtils;
 import org.thoughtcrime.securesms.util.SearchUtil;
 import org.thoughtcrime.securesms.util.ThemeUtil;
-import org.thoughtcrime.securesms.util.Util;
 import org.thoughtcrime.securesms.util.ViewUtil;
 
 import java.util.Collections;
@@ -52,7 +54,7 @@ import java.util.Locale;
 import java.util.Set;
 
 public class ConversationListItem extends RelativeLayout
-                                  implements RecipientModifiedListener,
+                                  implements RecipientForeverObserver,
                                              BindableConversationListItem, Unbindable
 {
   @SuppressWarnings("unused")
@@ -64,7 +66,7 @@ public class ConversationListItem extends RelativeLayout
   private static final int MAX_SNIPPET_LENGTH = 500;
 
   private Set<Long>           selectedThreads;
-  private Recipient           recipient;
+  private LiveRecipient       recipient;
   private long                threadId;
   private GlideRequests       glideRequests;
   private View                subjectContainer;
@@ -131,21 +133,23 @@ public class ConversationListItem extends RelativeLayout
                    boolean batchMode,
                    @Nullable String highlightSubstring)
   {
+    if (this.recipient != null) this.recipient.removeForeverObserver(this);
+
     this.selectedThreads  = selectedThreads;
-    this.recipient        = thread.getRecipient();
+    this.recipient        = thread.getRecipient().live();
     this.threadId         = thread.getThreadId();
     this.glideRequests    = glideRequests;
     this.unreadCount      = thread.getUnreadCount();
     this.distributionType = thread.getDistributionType();
     this.lastSeen         = thread.getLastSeen();
 
-    this.recipient.addListener(this);
+    this.recipient.observeForever(this);
     if (highlightSubstring != null) {
-      String name = recipient.isLocalNumber() ? getContext().getString(R.string.note_to_self) : recipient.getName();
+      String name = recipient.get().isLocalNumber() ? getContext().getString(R.string.note_to_self) : recipient.get().getDisplayName(getContext());
 
       this.fromView.setText(SearchUtil.getHighlightedSpan(locale, () -> new StyleSpan(Typeface.BOLD), name, highlightSubstring));
     } else {
-      this.fromView.setText(recipient, unreadCount == 0);
+      this.fromView.setText(recipient.get(), unreadCount == 0);
     }
 
     if (typingThreads.contains(threadId)) {
@@ -181,9 +185,9 @@ public class ConversationListItem extends RelativeLayout
     setStatusIcons(thread);
     setThumbnailSnippet(thread);
     setBatchState(batchMode);
-    setRippleColor(recipient);
+    setRippleColor(recipient.get());
     setUnreadIndicator(thread);
-    this.contactPhotoImage.setAvatar(glideRequests, recipient, true);
+    this.contactPhotoImage.setAvatar(glideRequests, recipient.get(), true);
   }
 
   public void bind(@NonNull  Recipient     contact,
@@ -191,16 +195,17 @@ public class ConversationListItem extends RelativeLayout
                    @NonNull  Locale        locale,
                    @Nullable String        highlightSubstring)
   {
+    if (this.recipient != null) this.recipient.removeForeverObserver(this);
+
     this.selectedThreads = Collections.emptySet();
-    this.recipient       = contact;
+    this.recipient       = contact.live();
     this.glideRequests   = glideRequests;
 
-    this.recipient.addListener(this);
+    this.recipient.observeForever(this);
 
-    String name = recipient.isLocalNumber() ? getContext().getString(R.string.note_to_self) : recipient.getName();
-
-    fromView.setText(SearchUtil.getHighlightedSpan(locale, () -> new StyleSpan(Typeface.BOLD), name, highlightSubstring));
-    subjectView.setText(SearchUtil.getHighlightedSpan(locale, () -> new StyleSpan(Typeface.BOLD), contact.getAddress().toString(), highlightSubstring));
+    fromView.setText(contact);
+    fromView.setText(SearchUtil.getHighlightedSpan(locale, () -> new StyleSpan(Typeface.BOLD), new SpannableString(fromView.getText()), highlightSubstring));
+    subjectView.setText(SearchUtil.getHighlightedSpan(locale, () -> new StyleSpan(Typeface.BOLD), contact.getE164().or(""), highlightSubstring));
     dateView.setText("");
     archivedView.setVisibility(GONE);
     unreadIndicator.setVisibility(GONE);
@@ -210,7 +215,7 @@ public class ConversationListItem extends RelativeLayout
 
     setBatchState(false);
     setRippleColor(contact);
-    contactPhotoImage.setAvatar(glideRequests, recipient, true);
+    contactPhotoImage.setAvatar(glideRequests, recipient.get(), true);
   }
 
   public void bind(@NonNull  MessageResult messageResult,
@@ -218,13 +223,15 @@ public class ConversationListItem extends RelativeLayout
                    @NonNull  Locale        locale,
                    @Nullable String        highlightSubstring)
   {
+    if (this.recipient != null) this.recipient.removeForeverObserver(this);
+
     this.selectedThreads = Collections.emptySet();
-    this.recipient       = messageResult.conversationRecipient;
+    this.recipient       = messageResult.conversationRecipient.live();
     this.glideRequests   = glideRequests;
 
-    this.recipient.addListener(this);
+    this.recipient.observeForever(this);
 
-    fromView.setText(recipient, true);
+    fromView.setText(recipient.get(), true);
     subjectView.setText(SearchUtil.getHighlightedSpan(locale, () -> new StyleSpan(Typeface.BOLD), messageResult.bodySnippet, highlightSubstring));
     dateView.setText(DateUtils.getBriefRelativeTimeSpanString(getContext(), locale, messageResult.receivedTimestampMs));
     archivedView.setVisibility(GONE);
@@ -234,13 +241,17 @@ public class ConversationListItem extends RelativeLayout
     thumbnailView.setVisibility(GONE);
 
     setBatchState(false);
-    setRippleColor(recipient);
-    contactPhotoImage.setAvatar(glideRequests, recipient, true);
+    setRippleColor(recipient.get());
+    contactPhotoImage.setAvatar(glideRequests, recipient.get(), true);
   }
 
   @Override
   public void unbind() {
-    if (this.recipient != null) this.recipient.removeListener(this);
+    if (this.recipient != null) {
+      this.recipient.removeForeverObserver(this);
+      this.recipient = null;
+      contactPhotoImage.setAvatar(glideRequests, null, true);
+    }
   }
 
   private void setBatchState(boolean batch) {
@@ -248,7 +259,7 @@ public class ConversationListItem extends RelativeLayout
   }
 
   public Recipient getRecipient() {
-    return recipient;
+    return recipient.get();
   }
 
   public long getThreadId() {
@@ -334,12 +345,10 @@ public class ConversationListItem extends RelativeLayout
   }
 
   @Override
-  public void onModified(final Recipient recipient) {
-    Util.runOnMain(() -> {
-      fromView.setText(recipient, unreadCount == 0);
-      contactPhotoImage.setAvatar(glideRequests, recipient, true);
-      setRippleColor(recipient);
-    });
+  public void onRecipientChanged(@NonNull Recipient recipient) {
+    fromView.setText(recipient, unreadCount == 0);
+    contactPhotoImage.setAvatar(glideRequests, recipient, true);
+    setRippleColor(recipient);
   }
 
   private static class ThumbnailPositioner implements Runnable {

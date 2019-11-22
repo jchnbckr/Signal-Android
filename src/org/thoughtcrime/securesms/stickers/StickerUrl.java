@@ -1,8 +1,8 @@
 package org.thoughtcrime.securesms.stickers;
 
 import android.net.Uri;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import android.text.TextUtils;
 
 import com.google.android.gms.common.util.Hex;
@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
  */
 public class StickerUrl {
 
-  private static final Pattern STICKER_URL_PATTERN = Pattern.compile("^https://signal\\.org/addstickers/#pack_id=(.*)&pack_key=(.*)$");
+  private static final Pattern STICKER_URL_PATTERN = Pattern.compile("^https://signal\\.art/addstickers/#pack_id=(.*)&pack_key=(.*)$");
 
   public static Optional<Pair<String, String>> parseActionUri(@Nullable Uri uri) {
     if (uri == null) return Optional.absent();
@@ -59,7 +59,7 @@ public class StickerUrl {
   }
 
   public static String createShareLink(@NonNull String packId, @NonNull String packKey) {
-    return "https://signal.org/addstickers/#pack_id=" + packId + "&pack_key=" + packKey;
+    return "https://signal.art/addstickers/#pack_id=" + packId + "&pack_key=" + packKey;
   }
 
   private static boolean isValidHex(String value) {

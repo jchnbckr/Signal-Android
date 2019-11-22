@@ -2,9 +2,9 @@ package org.thoughtcrime.securesms.crypto;
 
 
 import android.content.Context;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.WorkerThread;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.WorkerThread;
 
 import org.signal.libsignal.metadata.certificate.CertificateValidator;
 import org.signal.libsignal.metadata.certificate.InvalidCertificateException;
@@ -48,7 +48,9 @@ public class UnidentifiedAccessUtil {
     try {
       byte[] theirUnidentifiedAccessKey       = getTargetUnidentifiedAccessKey(recipient);
       byte[] ourUnidentifiedAccessKey         = getSelfUnidentifiedAccessKey(context);
-      byte[] ourUnidentifiedAccessCertificate = TextSecurePreferences.getUnidentifiedAccessCertificate(context);
+      byte[] ourUnidentifiedAccessCertificate = recipient.resolve().isUuidSupported() && Recipient.self().isUuidSupported()
+                                                  ? TextSecurePreferences.getUnidentifiedAccessCertificate(context)
+                                                  : TextSecurePreferences.getUnidentifiedAccessCertificateLegacy(context);
 
       if (TextSecurePreferences.isUniversalUnidentifiedAccess(context)) {
         ourUnidentifiedAccessKey = Util.getSecretBytes(16);
@@ -56,7 +58,8 @@ public class UnidentifiedAccessUtil {
 
       Log.i(TAG, "Their access key present? " + (theirUnidentifiedAccessKey != null) +
                  " | Our access key present? " + (ourUnidentifiedAccessKey != null) +
-                 " | Our certificate present? " + (ourUnidentifiedAccessCertificate != null));
+                 " | Our certificate present? " + (ourUnidentifiedAccessCertificate != null) +
+                 " | UUID certificate supported? " + recipient.isUuidSupported());
 
       if (theirUnidentifiedAccessKey != null &&
           ourUnidentifiedAccessKey != null   &&
@@ -83,7 +86,8 @@ public class UnidentifiedAccessUtil {
 
     try {
       byte[] ourUnidentifiedAccessKey         = getSelfUnidentifiedAccessKey(context);
-      byte[] ourUnidentifiedAccessCertificate = TextSecurePreferences.getUnidentifiedAccessCertificate(context);
+      byte[] ourUnidentifiedAccessCertificate = Recipient.self().isUuidSupported() ? TextSecurePreferences.getUnidentifiedAccessCertificate(context)
+                                                                                   : TextSecurePreferences.getUnidentifiedAccessCertificateLegacy(context);
 
       if (TextSecurePreferences.isUniversalUnidentifiedAccess(context)) {
         ourUnidentifiedAccessKey = Util.getSecretBytes(16);

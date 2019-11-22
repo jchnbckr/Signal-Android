@@ -1,7 +1,8 @@
 package org.thoughtcrime.securesms.database.model;
 
 import android.net.Uri;
-import android.support.annotation.NonNull;
+
+import androidx.annotation.NonNull;
 
 import org.thoughtcrime.securesms.mms.PartAuthority;
 

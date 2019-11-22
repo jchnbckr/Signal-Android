@@ -1,28 +1,24 @@
 package org.thoughtcrime.securesms.jobs;
 
 import android.content.Context;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
-import org.thoughtcrime.securesms.dependencies.InjectableType;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
+import org.thoughtcrime.securesms.gcm.MessageRetriever;
+import org.thoughtcrime.securesms.gcm.RestStrategy;
 import org.thoughtcrime.securesms.jobmanager.Data;
 import org.thoughtcrime.securesms.jobmanager.Job;
 import org.thoughtcrime.securesms.jobmanager.impl.NetworkConstraint;
 import org.thoughtcrime.securesms.logging.Log;
-import org.thoughtcrime.securesms.util.TextSecurePreferences;
-import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
 import org.whispersystems.signalservice.api.push.exceptions.PushNetworkException;
 
 import java.io.IOException;
 
-import javax.inject.Inject;
-
-public class PushNotificationReceiveJob extends PushReceivedJob implements InjectableType {
+public class PushNotificationReceiveJob extends BaseJob {
 
   public static final String KEY = "PushNotificationReceiveJob";
 
   private static final String TAG = PushNotificationReceiveJob.class.getSimpleName();
-
-  @Inject SignalServiceMessageReceiver receiver;
 
   public PushNotificationReceiveJob(Context context) {
     this(new Job.Parameters.Builder()
@@ -50,19 +46,16 @@ public class PushNotificationReceiveJob extends PushReceivedJob implements Injec
 
   @Override
   public void onRun() throws IOException {
-    pullAndProcessMessages(receiver, TAG, System.currentTimeMillis());
-  }
+    MessageRetriever retriever = ApplicationDependencies.getMessageRetriever();
+    boolean          result    = retriever.retrieveMessages(context, new RestStrategy());
 
-  public void pullAndProcessMessages(SignalServiceMessageReceiver receiver, String tag, long startTime) throws IOException {
-    synchronized (PushReceivedJob.RECEIVE_LOCK) {
-      receiver.retrieveMessages(envelope -> {
-        Log.i(tag, "Retrieved an envelope." + timeSuffix(startTime));
-        processEnvelope(envelope);
-        Log.i(tag, "Successfully processed an envelope." + timeSuffix(startTime));
-      });
-      TextSecurePreferences.setNeedsMessagePull(context, false);
+    if (result) {
+      Log.i(TAG, "Successfully pulled messages.");
+    } else {
+      throw new PushNetworkException("Failed to pull messages.");
     }
   }
+
   @Override
   public boolean onShouldRetry(@NonNull Exception e) {
     Log.w(TAG, e);

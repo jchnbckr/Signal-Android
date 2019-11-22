@@ -12,8 +12,8 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.annotation.RequiresApi;
+import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
@@ -36,15 +36,19 @@ import org.thoughtcrime.securesms.components.emoji.EmojiToggle;
 import org.thoughtcrime.securesms.components.emoji.MediaKeyboard;
 import org.thoughtcrime.securesms.contacts.avatars.ResourceContactPhoto;
 import org.thoughtcrime.securesms.crypto.ProfileKeyUtil;
-import org.thoughtcrime.securesms.database.Address;
-import org.thoughtcrime.securesms.dependencies.InjectableType;
+import org.thoughtcrime.securesms.database.DatabaseFactory;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobs.MultiDeviceProfileKeyUpdateJob;
+import org.thoughtcrime.securesms.jobs.MultiDeviceProfileContentUpdateJob;
+import org.thoughtcrime.securesms.jobs.RefreshOwnProfileJob;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.mms.GlideApp;
 import org.thoughtcrime.securesms.permissions.Permissions;
 import org.thoughtcrime.securesms.profiles.AvatarHelper;
 import org.thoughtcrime.securesms.profiles.ProfileMediaConstraints;
 import org.thoughtcrime.securesms.profiles.SystemProfileUtil;
+import org.thoughtcrime.securesms.recipients.Recipient;
+import org.thoughtcrime.securesms.recipients.RecipientId;
 import org.thoughtcrime.securesms.util.BitmapDecodingException;
 import org.thoughtcrime.securesms.util.BitmapUtil;
 import org.thoughtcrime.securesms.util.DynamicLanguage;
@@ -64,10 +68,8 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.concurrent.ExecutionException;
 
-import javax.inject.Inject;
-
 @SuppressLint("StaticFieldLeak")
-public class CreateProfileActivity extends BaseActionBarActivity implements InjectableType {
+public class CreateProfileActivity extends BaseActionBarActivity {
 
   private static final String TAG = CreateProfileActivity.class.getSimpleName();
 
@@ -76,8 +78,6 @@ public class CreateProfileActivity extends BaseActionBarActivity implements Inje
 
   private final DynamicTheme    dynamicTheme    = new DynamicRegistrationTheme();
   private final DynamicLanguage dynamicLanguage = new DynamicLanguage();
-
-  @Inject SignalServiceAccountManager accountManager;
 
   private InputAwareLayout       container;
   private ImageView              avatar;
@@ -106,8 +106,6 @@ public class CreateProfileActivity extends BaseActionBarActivity implements Inje
     initializeEmojiInput();
     initializeProfileName(getIntent().getBooleanExtra(EXCLUDE_SYSTEM, false));
     initializeProfileAvatar(getIntent().getBooleanExtra(EXCLUDE_SYSTEM, false));
-
-    ApplicationContext.getInstance(this).injectDependencies(this);
   }
 
   @Override
@@ -153,7 +151,7 @@ public class CreateProfileActivity extends BaseActionBarActivity implements Inje
 
           if (data != null && data.getBooleanExtra("delete", false)) {
             avatarBytes = null;
-            avatar.setImageDrawable(new ResourceContactPhoto(R.drawable.ic_camera_alt_white_24dp).asDrawable(this, getResources().getColor(R.color.grey_400)));
+            avatar.setImageDrawable(new ResourceContactPhoto(R.drawable.ic_camera_solid_white_24).asDrawable(this, getResources().getColor(R.color.grey_400)));
           } else {
             AvatarSelection.circularCropImage(this, inputFile, outputFile, R.string.CropImageActivity_profile_avatar);
           }
@@ -266,14 +264,14 @@ public class CreateProfileActivity extends BaseActionBarActivity implements Inje
   }
 
   private void initializeProfileAvatar(boolean excludeSystem) {
-    Address ourAddress = Address.fromSerialized(TextSecurePreferences.getLocalNumber(this));
+    RecipientId selfId = Recipient.self().getId();
 
-    if (AvatarHelper.getAvatarFile(this, ourAddress).exists() && AvatarHelper.getAvatarFile(this, ourAddress).length() > 0) {
+    if (AvatarHelper.getAvatarFile(this, selfId).exists() && AvatarHelper.getAvatarFile(this, selfId).length() > 0) {
       new AsyncTask<Void, Void, byte[]>() {
         @Override
         protected byte[] doInBackground(Void... params) {
           try {
-            return Util.readFully(AvatarHelper.getInputStreamFor(CreateProfileActivity.this, ourAddress));
+            return Util.readFully(AvatarHelper.getInputStreamFor(CreateProfileActivity.this, selfId));
           } catch (IOException e) {
             Log.w(TAG, e);
             return null;
@@ -361,12 +359,14 @@ public class CreateProfileActivity extends BaseActionBarActivity implements Inje
     new AsyncTask<Void, Void, Boolean>() {
       @Override
       protected Boolean doInBackground(Void... params) {
-        Context context    = CreateProfileActivity.this;
-        byte[]  profileKey = ProfileKeyUtil.getProfileKey(CreateProfileActivity.this);
+        Context                     context        = CreateProfileActivity.this;
+        byte[]                      profileKey     = ProfileKeyUtil.getProfileKey(CreateProfileActivity.this);
+        SignalServiceAccountManager accountManager = ApplicationDependencies.getSignalServiceAccountManager();
 
         try {
           accountManager.setProfileName(profileKey, name);
           TextSecurePreferences.setProfileName(context, name);
+          DatabaseFactory.getRecipientDatabase(context).setProfileName(Recipient.self().getId(), name);
         } catch (IOException e) {
           Log.w(TAG, e);
           return false;
@@ -374,14 +374,15 @@ public class CreateProfileActivity extends BaseActionBarActivity implements Inje
 
         try {
           accountManager.setProfileAvatar(profileKey, avatar);
-          AvatarHelper.setAvatar(CreateProfileActivity.this, Address.fromSerialized(TextSecurePreferences.getLocalNumber(context)), avatarBytes);
+          AvatarHelper.setAvatar(CreateProfileActivity.this, Recipient.self().getId(), avatarBytes);
           TextSecurePreferences.setProfileAvatarId(CreateProfileActivity.this, new SecureRandom().nextInt());
         } catch (IOException e) {
           Log.w(TAG, e);
           return false;
         }
 
-        ApplicationContext.getInstance(context).getJobManager().add(new MultiDeviceProfileKeyUpdateJob());
+        ApplicationDependencies.getJobManager().add(new MultiDeviceProfileKeyUpdateJob());
+        ApplicationDependencies.getJobManager().add(new MultiDeviceProfileContentUpdateJob());
 
         return true;
       }

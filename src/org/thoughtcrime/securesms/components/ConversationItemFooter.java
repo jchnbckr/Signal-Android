@@ -4,9 +4,10 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.graphics.PorterDuff;
 import android.os.AsyncTask;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.ImageView;
@@ -86,7 +87,7 @@ public class ConversationItemFooter extends LinearLayout {
   }
 
   public void setIconColor(int color) {
-    timerView.setColorFilter(color);
+    timerView.setColorFilter(color, PorterDuff.Mode.SRC_IN);
     insecureIndicatorView.setColorFilter(color);
     deliveryStatusView.setTint(color);
   }

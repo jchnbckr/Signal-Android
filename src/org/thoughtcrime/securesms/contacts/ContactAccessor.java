@@ -29,10 +29,13 @@ import android.provider.ContactsContract.PhoneLookup;
 import android.telephony.PhoneNumberUtils;
 import android.text.TextUtils;
 
+import com.annimon.stream.Stream;
+
 import org.thoughtcrime.securesms.R;
-import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.GroupDatabase;
+import org.thoughtcrime.securesms.phonenumbers.PhoneNumberFormatter;
+import org.thoughtcrime.securesms.recipients.Recipient;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 
 import java.util.ArrayList;
@@ -46,7 +49,7 @@ import static org.thoughtcrime.securesms.database.GroupDatabase.GroupRecord;
 
 /**
  * This class was originally a layer of indirection between
- * ContactAccessorNewApi and ContactAccesorOldApi, which corresponded
+ * ContactAccessorNewApi and ContactAccessorOldApi, which corresponded
  * to the API changes between 1.x and 2.x.
  *
  * Now that we no longer support 1.x, this class mostly serves as a place
@@ -66,13 +69,13 @@ public class ContactAccessor {
     return instance;
   }
 
-  public Set<Address> getAllContactsWithNumbers(Context context) {
-    Set<Address> results = new HashSet<>();
+  public Set<String> getAllContactsWithNumbers(Context context) {
+    Set<String> results = new HashSet<>();
 
     try (Cursor cursor = context.getContentResolver().query(Phone.CONTENT_URI, new String[] {Phone.NUMBER}, null ,null, null)) {
       while (cursor != null && cursor.moveToNext()) {
         if (!TextUtils.isEmpty(cursor.getString(0))) {
-          results.add(Address.fromExternal(context, cursor.getString(0)));
+          results.add(PhoneNumberFormatter.get(context).format(cursor.getString(0)));
         }
       }
     }
@@ -81,7 +84,7 @@ public class ContactAccessor {
   }
 
   public Cursor getAllSystemContacts(Context context) {
-    return context.getContentResolver().query(Phone.CONTENT_URI, new String[] {Phone.NUMBER, Phone.DISPLAY_NAME, Phone.LABEL, Phone.PHOTO_URI, Phone._ID, Phone.LOOKUP_KEY}, null, null, null);
+    return context.getContentResolver().query(Phone.CONTENT_URI, new String[] {Phone.NUMBER, Phone.DISPLAY_NAME, Phone.LABEL, Phone.PHOTO_URI, Phone._ID, Phone.LOOKUP_KEY, Phone.TYPE}, null, null, null);
   }
 
   public boolean isSystemContact(Context context, String number) {
@@ -105,17 +108,21 @@ public class ContactAccessor {
     final ContentResolver resolver = context.getContentResolver();
     final String[] inProjection    = new String[]{PhoneLookup._ID, PhoneLookup.DISPLAY_NAME};
 
-    final List<Address>           registeredAddresses = DatabaseFactory.getRecipientDatabase(context).getRegistered();
+    final List<String>           registeredAddresses = Stream.of(DatabaseFactory.getRecipientDatabase(context).getRegistered())
+                                                              .map(Recipient::resolved)
+                                                              .filter(r -> r.getE164().isPresent())
+                                                              .map(Recipient::requireE164)
+                                                              .toList();
     final Collection<ContactData> lookupData          = new ArrayList<>(registeredAddresses.size());
 
-    for (Address registeredAddress : registeredAddresses) {
-      Uri    uri          = Uri.withAppendedPath(PhoneLookup.CONTENT_FILTER_URI, Uri.encode(registeredAddress.serialize()));
+    for (String registeredAddress : registeredAddresses) {
+      Uri    uri          = Uri.withAppendedPath(PhoneLookup.CONTENT_FILTER_URI, Uri.encode(registeredAddress));
       Cursor lookupCursor = resolver.query(uri, inProjection, null, null, null);
 
       try {
         if (lookupCursor != null && lookupCursor.moveToFirst()) {
           final ContactData contactData = new ContactData(lookupCursor.getLong(0), lookupCursor.getString(1));
-          contactData.numbers.add(new NumberData("TextSecure", registeredAddress.serialize()));
+          contactData.numbers.add(new NumberData("TextSecure", registeredAddress));
           lookupData.add(contactData);
         }
       } finally {
@@ -196,7 +203,7 @@ public class ContactAccessor {
     GroupRecord record;
 
     try {
-      reader = DatabaseFactory.getGroupDatabase(context).getGroupsFilteredByTitle(constraint);
+      reader = DatabaseFactory.getGroupDatabase(context).getGroupsFilteredByTitle(constraint, true);
 
       while ((record = reader.getNext()) != null) {
         numberList.add(record.getEncodedId());

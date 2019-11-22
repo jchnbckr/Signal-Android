@@ -1,17 +1,21 @@
 package org.thoughtcrime.securesms.jobs;
 
 
-import android.support.annotation.NonNull;
+import android.app.Application;
+
+import androidx.annotation.NonNull;
 
 import org.thoughtcrime.securesms.crypto.UnidentifiedAccessUtil;
-import org.thoughtcrime.securesms.database.Address;
-import org.thoughtcrime.securesms.dependencies.InjectableType;
+import org.thoughtcrime.securesms.dependencies.ApplicationDependencies;
 import org.thoughtcrime.securesms.jobmanager.Data;
 import org.thoughtcrime.securesms.jobmanager.Job;
 import org.thoughtcrime.securesms.jobmanager.impl.NetworkConstraint;
 import org.thoughtcrime.securesms.logging.Log;
 import org.thoughtcrime.securesms.recipients.Recipient;
+import org.thoughtcrime.securesms.recipients.RecipientId;
+import org.thoughtcrime.securesms.recipients.RecipientUtil;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
+import org.whispersystems.libsignal.util.guava.Optional;
 import org.whispersystems.signalservice.api.SignalServiceMessageSender;
 import org.whispersystems.signalservice.api.crypto.UntrustedIdentityException;
 import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage;
@@ -23,45 +27,42 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import javax.inject.Inject;
-
-public class SendReadReceiptJob extends BaseJob implements InjectableType {
+public class SendReadReceiptJob extends BaseJob {
 
   public static final String KEY = "SendReadReceiptJob";
 
   private static final String TAG = SendReadReceiptJob.class.getSimpleName();
 
   private static final String KEY_ADDRESS     = "address";
+  private static final String KEY_RECIPIENT   = "recipient";
   private static final String KEY_MESSAGE_IDS = "message_ids";
   private static final String KEY_TIMESTAMP   = "timestamp";
 
-  @Inject SignalServiceMessageSender messageSender;
+  private RecipientId recipientId;
+  private List<Long>  messageIds;
+  private long        timestamp;
 
-  private String     address;
-  private List<Long> messageIds;
-  private long       timestamp;
-
-  public SendReadReceiptJob(Address address, List<Long> messageIds) {
+  public SendReadReceiptJob(@NonNull RecipientId recipientId, List<Long> messageIds) {
     this(new Job.Parameters.Builder()
                            .addConstraint(NetworkConstraint.KEY)
                            .setLifespan(TimeUnit.DAYS.toMillis(1))
                            .setMaxAttempts(Parameters.UNLIMITED)
                            .build(),
-         address,
+         recipientId,
          messageIds,
          System.currentTimeMillis());
   }
 
   private SendReadReceiptJob(@NonNull Job.Parameters parameters,
-                             @NonNull Address address,
+                             @NonNull RecipientId recipientId,
                              @NonNull List<Long> messageIds,
                              long timestamp)
   {
     super(parameters);
 
-    this.address    = address.serialize();
-    this.messageIds = messageIds;
-    this.timestamp  = timestamp;
+    this.recipientId = recipientId;
+    this.messageIds  = messageIds;
+    this.timestamp   = timestamp;
   }
 
   @Override
@@ -71,7 +72,7 @@ public class SendReadReceiptJob extends BaseJob implements InjectableType {
       ids[i] = messageIds.get(i);
     }
 
-    return new Data.Builder().putString(KEY_ADDRESS, address)
+    return new Data.Builder().putString(KEY_RECIPIENT, recipientId.serialize())
                              .putLongArray(KEY_MESSAGE_IDS, ids)
                              .putLong(KEY_TIMESTAMP, timestamp)
                              .build();
@@ -86,11 +87,13 @@ public class SendReadReceiptJob extends BaseJob implements InjectableType {
   public void onRun() throws IOException, UntrustedIdentityException {
     if (!TextSecurePreferences.isReadReceiptsEnabled(context) || messageIds.isEmpty()) return;
 
-    SignalServiceAddress        remoteAddress  = new SignalServiceAddress(address);
+    Recipient                   recipient      = Recipient.resolved(recipientId);
+    SignalServiceMessageSender  messageSender  = ApplicationDependencies.getSignalServiceMessageSender();
+    SignalServiceAddress        remoteAddress  = RecipientUtil.toSignalServiceAddress(context, recipient);
     SignalServiceReceiptMessage receiptMessage = new SignalServiceReceiptMessage(SignalServiceReceiptMessage.Type.READ, messageIds, timestamp);
 
     messageSender.sendReceipt(remoteAddress,
-                              UnidentifiedAccessUtil.getAccessFor(context, Recipient.from(context, Address.fromSerialized(address), false)),
+                              UnidentifiedAccessUtil.getAccessFor(context, Recipient.resolved(recipientId)),
                               receiptMessage);
   }
 
@@ -102,22 +105,30 @@ public class SendReadReceiptJob extends BaseJob implements InjectableType {
 
   @Override
   public void onCanceled() {
-    Log.w(TAG, "Failed to send read receipts to: " + address);
+    Log.w(TAG, "Failed to send read receipts to: " + recipientId);
   }
 
   public static final class Factory implements Job.Factory<SendReadReceiptJob> {
+
+    private final Application application;
+
+    public Factory(@NonNull Application application) {
+      this.application = application;
+    }
+
     @Override
     public @NonNull SendReadReceiptJob create(@NonNull Parameters parameters, @NonNull Data data) {
-      Address    address    = Address.fromSerialized(data.getString(KEY_ADDRESS));
-      long       timestamp  = data.getLong(KEY_TIMESTAMP);
-      long[]     ids        = data.hasLongArray(KEY_MESSAGE_IDS) ? data.getLongArray(KEY_MESSAGE_IDS) : new long[0];
-      List<Long> messageIds = new ArrayList<>(ids.length);
+      long        timestamp   = data.getLong(KEY_TIMESTAMP);
+      long[]      ids         = data.hasLongArray(KEY_MESSAGE_IDS) ? data.getLongArray(KEY_MESSAGE_IDS) : new long[0];
+      List<Long>  messageIds  = new ArrayList<>(ids.length);
+      RecipientId recipientId = data.hasString(KEY_RECIPIENT) ? RecipientId.from(data.getString(KEY_RECIPIENT))
+                                                              : Recipient.external(application, data.getString(KEY_ADDRESS)).getId();
 
       for (long id : ids) {
         messageIds.add(id);
       }
 
-      return new SendReadReceiptJob(parameters, address, messageIds, timestamp);
+      return new SendReadReceiptJob(parameters, recipientId, messageIds, timestamp);
     }
   }
 }

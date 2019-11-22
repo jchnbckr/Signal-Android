@@ -1,6 +1,6 @@
 package org.thoughtcrime.securesms.attachments;
 
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -32,7 +32,7 @@ public class AttachmentId {
   }
 
   public @NonNull String toString() {
-    return "(row id: " + rowId + ", unique ID: " + uniqueId + ")";
+    return "AttachmentId::(" + rowId + ", " + uniqueId + ")";
   }
 
   public boolean isValid() {

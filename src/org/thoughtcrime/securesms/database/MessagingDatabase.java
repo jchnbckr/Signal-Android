@@ -5,13 +5,17 @@ import android.content.Context;
 import android.database.Cursor;
 import android.text.TextUtils;
 
+import androidx.annotation.NonNull;
+
 import net.sqlcipher.database.SQLiteDatabase;
 
 import org.thoughtcrime.securesms.database.documents.Document;
 import org.thoughtcrime.securesms.database.documents.IdentityKeyMismatch;
 import org.thoughtcrime.securesms.database.documents.IdentityKeyMismatchList;
 import org.thoughtcrime.securesms.database.helpers.SQLCipherOpenHelper;
+import org.thoughtcrime.securesms.insights.InsightsConstants;
 import org.thoughtcrime.securesms.logging.Log;
+import org.thoughtcrime.securesms.recipients.RecipientId;
 import org.thoughtcrime.securesms.util.JsonUtils;
 import org.whispersystems.libsignal.IdentityKey;
 
@@ -19,6 +23,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public abstract class MessagingDatabase extends Database implements MmsSmsColumns {
 
@@ -29,6 +34,8 @@ public abstract class MessagingDatabase extends Database implements MmsSmsColumn
   }
 
   protected abstract String getTableName();
+  protected abstract String getTypeField();
+  protected abstract String getDateSentColumnName();
 
   public abstract void markExpireStarted(long messageId);
   public abstract void markExpireStarted(long messageId, long startTime);
@@ -36,41 +43,67 @@ public abstract class MessagingDatabase extends Database implements MmsSmsColumn
   public abstract void markAsSent(long messageId, boolean secure);
   public abstract void markUnidentified(long messageId, boolean unidentified);
 
-  public void setMismatchedIdentity(long messageId, final Address address, final IdentityKey identityKey) {
-    List<IdentityKeyMismatch> items = new ArrayList<IdentityKeyMismatch>() {{
-      add(new IdentityKeyMismatch(address, identityKey));
-    }};
+  final int getInsecureMessagesSentForThread(long threadId) {
+    SQLiteDatabase db         = databaseHelper.getReadableDatabase();
+    String[]       projection = new String[]{"COUNT(*)"};
+    String         query      = THREAD_ID + " = ? AND " + getOutgoingInsecureMessageClause() + " AND " + getDateSentColumnName() + " > ?";
+    String[]       args       = new String[]{String.valueOf(threadId), String.valueOf(System.currentTimeMillis() - InsightsConstants.PERIOD_IN_MILLIS)};
 
-    IdentityKeyMismatchList document = new IdentityKeyMismatchList(items);
-
-    SQLiteDatabase database = databaseHelper.getWritableDatabase();
-    database.beginTransaction();
-
-    try {
-      setDocument(database, messageId, MISMATCHED_IDENTITIES, document);
-
-      database.setTransactionSuccessful();
-    } catch (IOException ioe) {
-      Log.w(TAG, ioe);
-    } finally {
-      database.endTransaction();
+    try (Cursor cursor = db.query(getTableName(), projection, query, args, null, null, null, null)) {
+      if (cursor != null && cursor.moveToFirst()) {
+        return cursor.getInt(0);
+      } else {
+        return 0;
+      }
     }
   }
 
-  public void addMismatchedIdentity(long messageId, Address address, IdentityKey identityKey) {
+  final int getInsecureMessageCountForInsights() {
+    return getMessageCountForRecipientsAndType(getOutgoingInsecureMessageClause());
+  }
+
+  final int getSecureMessageCountForInsights() {
+    return getMessageCountForRecipientsAndType(getOutgoingSecureMessageClause());
+  }
+
+  private int getMessageCountForRecipientsAndType(String typeClause) {
+
+    SQLiteDatabase db           = databaseHelper.getReadableDatabase();
+    String[]       projection   = new String[] {"COUNT(*)"};
+    String         query        = typeClause + " AND " + getDateSentColumnName() + " > ?";
+    String[]       args         = new String[]{String.valueOf(System.currentTimeMillis() - InsightsConstants.PERIOD_IN_MILLIS)};
+
+    try (Cursor cursor = db.query(getTableName(), projection, query, args, null, null, null, null)) {
+      if (cursor != null && cursor.moveToFirst()) {
+        return cursor.getInt(0);
+      } else {
+        return 0;
+      }
+    }
+  }
+
+  private String getOutgoingInsecureMessageClause() {
+    return "(" + getTypeField() + " & " + Types.BASE_TYPE_MASK + ") = " + Types.BASE_SENT_TYPE + " AND NOT (" + getTypeField() + " & " + Types.SECURE_MESSAGE_BIT + ")";
+  }
+
+  private String getOutgoingSecureMessageClause() {
+    return "(" + getTypeField() + " & " + Types.BASE_TYPE_MASK + ") = " + Types.BASE_SENT_TYPE + " AND (" + getTypeField() + " & " + (Types.SECURE_MESSAGE_BIT | Types.PUSH_MESSAGE_BIT) + ")";
+  }
+
+  public void addMismatchedIdentity(long messageId, @NonNull RecipientId recipientId, IdentityKey identityKey) {
     try {
       addToDocument(messageId, MISMATCHED_IDENTITIES,
-                    new IdentityKeyMismatch(address, identityKey),
+                    new IdentityKeyMismatch(recipientId, identityKey),
                     IdentityKeyMismatchList.class);
     } catch (IOException e) {
       Log.w(TAG, e);
     }
   }
 
-  public void removeMismatchedIdentity(long messageId, Address address, IdentityKey identityKey) {
+  public void removeMismatchedIdentity(long messageId, @NonNull RecipientId recipientId, IdentityKey identityKey) {
     try {
       removeFromDocument(messageId, MISMATCHED_IDENTITIES,
-                         new IdentityKeyMismatch(address, identityKey),
+                         new IdentityKeyMismatch(recipientId, identityKey),
                          IdentityKeyMismatchList.class);
     } catch (IOException e) {
       Log.w(TAG, e);
@@ -174,16 +207,16 @@ public abstract class MessagingDatabase extends Database implements MmsSmsColumn
 
   public static class SyncMessageId {
 
-    private final Address address;
-    private final long   timetamp;
+    private final RecipientId recipientId;
+    private final long        timetamp;
 
-    public SyncMessageId(Address address, long timetamp) {
-      this.address  = address;
-      this.timetamp = timetamp;
+    public SyncMessageId(@NonNull RecipientId recipientId, long timetamp) {
+      this.recipientId = recipientId;
+      this.timetamp    = timetamp;
     }
 
-    public Address getAddress() {
-      return address;
+    public RecipientId getRecipientId() {
+      return recipientId;
     }
 
     public long getTimetamp() {

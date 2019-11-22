@@ -1,8 +1,8 @@
 package org.thoughtcrime.securesms.search;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v7.widget.RecyclerView;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.recyclerview.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -94,9 +94,9 @@ class SearchListAdapter extends    RecyclerView.Adapter<SearchListAdapter.Search
   }
 
   @Override
-  public HeaderViewHolder onCreateHeaderViewHolder(ViewGroup parent) {
+  public HeaderViewHolder onCreateHeaderViewHolder(ViewGroup parent, int position) {
     return new HeaderViewHolder(LayoutInflater.from(parent.getContext())
-                                              .inflate(R.layout.contact_selection_list_divider, parent, false));
+                                              .inflate(R.layout.search_result_list_divider, parent, false));
   }
 
   @Override

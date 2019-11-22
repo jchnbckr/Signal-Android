@@ -26,8 +26,10 @@ import android.content.res.Configuration;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.v7.app.AlertDialog;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.app.ActivityCompat;
+
 import org.thoughtcrime.securesms.logging.Log;
 import android.view.View;
 import android.view.Window;
@@ -42,12 +44,10 @@ import org.thoughtcrime.securesms.components.webrtc.WebRtcCallScreen;
 import org.thoughtcrime.securesms.crypto.storage.TextSecureIdentityKeyStore;
 import org.thoughtcrime.securesms.events.WebRtcViewModel;
 import org.thoughtcrime.securesms.permissions.Permissions;
-import org.thoughtcrime.securesms.push.SignalServiceNetworkAccess;
 import org.thoughtcrime.securesms.recipients.Recipient;
 import org.thoughtcrime.securesms.service.WebRtcCallService;
 import org.thoughtcrime.securesms.util.ServiceUtil;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
-import org.thoughtcrime.securesms.util.Util;
 import org.thoughtcrime.securesms.util.ViewUtil;
 import org.whispersystems.libsignal.IdentityKey;
 import org.whispersystems.libsignal.SignalProtocolAddress;
@@ -80,6 +80,8 @@ public class WebRtcCallActivity extends Activity {
     setVolumeControlStream(AudioManager.STREAM_VOICE_CALL);
 
     initializeResources();
+
+    processIntent(getIntent());
   }
 
 
@@ -94,13 +96,7 @@ public class WebRtcCallActivity extends Activity {
   @Override
   public void onNewIntent(Intent intent){
     Log.i(TAG, "onNewIntent");
-    if (ANSWER_ACTION.equals(intent.getAction())) {
-      handleAnswerCall();
-    } else if (DENY_ACTION.equals(intent.getAction())) {
-      handleDenyCall();
-    } else if (END_CALL_ACTION.equals(intent.getAction())) {
-      handleEndCall();
-    }
+    processIntent(intent);
   }
 
   @Override
@@ -118,6 +114,16 @@ public class WebRtcCallActivity extends Activity {
   @Override
   public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
     Permissions.onRequestPermissionsResult(this, requestCode, permissions, grantResults);
+  }
+
+  private void processIntent(@NonNull Intent intent) {
+    if (ANSWER_ACTION.equals(intent.getAction())) {
+      handleAnswerCall();
+    } else if (DENY_ACTION.equals(intent.getAction())) {
+      handleDenyCall();
+    } else if (END_CALL_ACTION.equals(intent.getAction())) {
+      handleEndCall();
+    }
   }
 
   private void initializeScreenshotSecurity() {
@@ -166,8 +172,8 @@ public class WebRtcCallActivity extends Activity {
       Permissions.with(this)
                  .request(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
                  .ifNecessary()
-                 .withRationaleDialog(getString(R.string.WebRtcCallActivity_to_answer_the_call_from_s_give_signal_access_to_your_microphone, event.getRecipient().toShortString()),
-                                      R.drawable.ic_mic_white_48dp, R.drawable.ic_videocam_white_48dp)
+                 .withRationaleDialog(getString(R.string.WebRtcCallActivity_to_answer_the_call_from_s_give_signal_access_to_your_microphone, event.getRecipient().toShortString(this)),
+                                      R.drawable.ic_mic_solid_24, R.drawable.ic_videocam_white_48dp)
                  .withPermanentDenialDialog(getString(R.string.WebRtcCallActivity_signal_requires_microphone_and_camera_permissions_in_order_to_make_or_receive_calls))
                  .onAllGranted(() -> {
                    callScreen.setActiveCall(event.getRecipient(), getString(R.string.RedPhone_answering));
@@ -275,11 +281,11 @@ public class WebRtcCallActivity extends Activity {
       public void onClick(View v) {
         synchronized (SESSION_LOCK) {
           TextSecureIdentityKeyStore identityKeyStore = new TextSecureIdentityKeyStore(WebRtcCallActivity.this);
-          identityKeyStore.saveIdentity(new SignalProtocolAddress(recipient.getAddress().serialize(), 1), theirIdentity, true);
+          identityKeyStore.saveIdentity(new SignalProtocolAddress(recipient.requireServiceId(), 1), theirIdentity, true);
         }
 
         Intent intent = new Intent(WebRtcCallActivity.this, WebRtcCallService.class);
-        intent.putExtra(WebRtcCallService.EXTRA_REMOTE_ADDRESS, recipient.getAddress());
+        intent.putExtra(WebRtcCallService.EXTRA_REMOTE_RECIPIENT, recipient.getId());
         intent.setAction(WebRtcCallService.ACTION_OUTGOING_CALL);
         startService(intent);
       }
